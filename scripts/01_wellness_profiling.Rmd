@@ -1,0 +1,1643 @@
+---
+title: "01_wellness_profiling"
+output: html_document
+autor: "María Bueno Álvez"
+date: "2024-12-13"
+editor_options: 
+  chunk_output_type: console
+---
+
+# Set up
+
+```{r}
+source("scripts/functions/functions_analyses.R")
+source("scripts/functions/functions_utility.R")
+source("scripts/functions/functions_visualization.R")
+source("scripts/functions/themes_palettes.R")
+
+# Read in data
+ht_data <- read_csv("data/wellness_data.csv")
+manifest <- import_df("data/samples_2024-12-17.xlsx")
+olink_targets <- read_csv("data/overlap_olink_platforms.csv")
+
+# Wellness metadata
+wellness_meta <- 
+  manifest |> 
+  filter(Cohort == "WELL") |> 
+  select(DAid, Age, Sex, `Extra data`) |> 
+   mutate(
+    visit = str_extract(`Extra data`, "(?<=visit: )\\d+"),                   # Extract visit number
+    subject = str_extract(`Extra data`, "(?<=subject_id: )\\d+-\\d+"),      # Extract subject ID
+    month_of_sampling = str_extract(`Extra data`, "(?<=sample_date: )\\d{4}-\\d{2}-\\d{2}") %>% 
+      as.Date(format = "%Y-%m-%d") %>%                                     # Convert to Date
+      format("%m")                                                      # Extract Year-Month
+  ) |> 
+  rename(sex = Sex, 
+         age = Age) |> 
+  select(-`Extra data`)
+
+
+# Wellness data
+wellness_data <- 
+  ht_data |> 
+  filter(DAid %in% wellness_meta$DAid) |> 
+  select(DAid, Assay, NPX, LOD, above_LOD)
+
+```
+
+# QC
+
+## Duplicated samples
+
+```{r}
+# Duplicated samples
+duplicated_entires <- 
+  wellness_meta |> 
+  group_by(subject) |> 
+  count(visit) |> 
+  filter(n > 1) 
+
+# write_tsv(duplicated_entires, savepath("duplicated_samples.tsv"))
+# 
+# wellness_meta |> 
+#   inner_join(duplicated_entires) |> 
+#   write_tsv(savepath("duplicated_samples_meta.tsv"))
+
+# Manual exclusion of duplicated samples
+DAid_exclude <- c("DA11971", "DA12092", "DA12126")
+
+wellness_data <-
+  wellness_data |>
+  filter(!DAid %in% DAid_exclude)
+
+wellness_meta <-
+  wellness_meta |>
+  filter(!DAid %in% DAid_exclude)
+```
+### Correlation
+
+```{r}
+
+plot_correlation <- function(data, subt, DAid1, DAid2) {
+ 
+   # Filter and compute Spearman correlation
+  correlation <- data |> 
+    filter(DAid %in% c(DAid1, DAid2)) |> 
+    select(DAid, Assay, NPX) |> 
+    pivot_wider(names_from = "DAid", values_from = "NPX") |> 
+    summarise(spearman_corr = cor(.data[[DAid1]], .data[[DAid2]], method = "spearman")) |> 
+    pull(spearman_corr)
+  
+  # Create the plot
+  data |> 
+    filter(DAid %in% c(DAid1, DAid2)) |> 
+    select(DAid, Assay, NPX, Block) |> 
+    pivot_wider(names_from = "DAid", values_from = "NPX") |> 
+    ggplot(aes(.data[[DAid1]], .data[[DAid2]], color = as.factor(Block))) +
+    geom_point(alpha = 0.6) +
+    geom_abline() +
+    theme_hpa() +
+    scale_color_viridis_d("Block") +
+    ggtitle(paste("Correlation ", DAid1, " vs ", DAid2, sep = "")) +
+    labs(subtitle = subt) +
+    annotate("text", x = min(data$NPX, na.rm = TRUE), y = max(data$NPX, na.rm = TRUE), 
+             label = paste0("Spearman r: ", round(correlation, 2)), 
+             hjust = 0, size = 5)
+  
+}
+
+# Patient 1-3828
+plot_correlation(data = ht_data,
+                 subt = "Same patient, same visit",
+                 DAid1 = "DA11971",
+                 DAid2 = "DA11972")
+
+ggsave(savepath("cor_samepatient_samevisit.png"), h = 5, w = 5)
+
+plot_correlation(data = ht_data,
+                 subt = "Same patient, different visit",
+                 DAid1 = "DA11971",
+                 DAid2 = "DA12247") +
+
+plot_correlation(data = ht_data,
+                 subt = "Same patient, different visit",
+                 DAid1 = "DA11972",
+                 DAid2 = "DA12247")
+
+ggsave(savepath("cor_samepatient_difvisit.png"), h = 5, w = 10)
+
+
+plot_correlation(data = ht_data,
+                 subt = "Different patient, same visit",
+                 DAid1 = "DA11971",
+                 DAid2 = "DA11914") +
+
+plot_correlation(data = ht_data,
+                 subt = "Different patient, same visit",
+                 DAid1 = "DA11972",
+                 DAid2 = "DA11914")
+
+ggsave(savepath("cor_difpatient_samevisit.png"), h = 5, w = 10)
+
+
+# Patient 1-3614
+plot_correlation(data = ht_data,
+                 subt = "Same patient, same visit",
+                 DAid1 = "DA12092",
+                 DAid2 = "DA12100")
+
+ggsave(savepath("3614_cor_samepatient_samevisit.png"), h = 5, w = 5)
+
+plot_correlation(data = ht_data,
+                 subt = "Same patient, different visit",
+                 DAid1 = "DA12092",
+                 DAid2 = "DA11797") +
+
+plot_correlation(data = ht_data,
+                 subt = "Same patient, different visit",
+                 DAid1 = "DA12100",
+                 DAid2 = "DA11797")
+
+ggsave(savepath("3614_cor_samepatient_difvisit.png"), h = 5, w = 10)
+
+
+plot_correlation(data = ht_data,
+                 subt = "Different patient, same visit",
+                 DAid1 = "DA12092",
+                 DAid2 = "DA12015") +
+
+plot_correlation(data = ht_data,
+                 subt = "Different patient, same visit",
+                 DAid1 = "DA12100",
+                 DAid2 = "DA12015")
+
+ggsave(savepath("3614_cor_difpatient_samevisit.png"), h = 5, w = 10)
+
+
+# Patient 1-3512
+plot_correlation(data = ht_data,
+                 subt = "Same patient, same visit",
+                 DAid1 = "DA12126",
+                 DAid2 = "DA11851")
+
+ggsave(savepath("3512_cor_samepatient_samevisit.png"), h = 5, w = 5)
+
+plot_correlation(data = ht_data,
+                 subt = "Same patient, different visit",
+                 DAid1 = "DA12126",
+                 DAid2 = "DA11851") +
+
+plot_correlation(data = ht_data,
+                 subt = "Same patient, different visit",
+                 DAid1 = "DA12127",
+                 DAid2 = "DA11851")
+
+ggsave(savepath("3512_cor_samepatient_difvisit.png"), h = 5, w = 10)
+
+
+plot_correlation(data = ht_data,
+                 subt = "Different patient, same visit",
+                 DAid1 = "DA12126",
+                 DAid2 = "DA12015") +
+
+plot_correlation(data = ht_data,
+                 subt = "Different patient, same visit",
+                 DAid1 = "DA12127",
+                 DAid2 = "DA12015")
+
+ggsave(savepath("3512_cor_difpatient_samevisit.png"), h = 5, w = 10)
+
+
+
+```
+### Correlation 1.5K
+
+```{r}
+olink_explore_v0 <- 
+  olink_targets |> 
+  filter(Platform == "1.5K") |> 
+  pull(Assay)
+
+ht_data_subset <- 
+  ht_data |> 
+  filter(Assay %in% olink_explore_v0)
+
+# Patient 1-3828
+plot_correlation(data = ht_data_subset,
+                 subt = "Same patient, same visit",
+                 DAid1 = "DA11971",
+                 DAid2 = "DA11972")
+
+ggsave(savepath("3828_cor_samepatient_samevisit_subset.png"), h = 5, w = 5)
+
+plot_correlation(data = ht_data_subset,
+                 subt = "Same patient, different visit",
+                 DAid1 = "DA11971",
+                 DAid2 = "DA12247") +
+
+plot_correlation(data = ht_data_subset,
+                 subt = "Same patient, different visit",
+                 DAid1 = "DA11972",
+                 DAid2 = "DA12247")
+
+ggsave(savepath("3828_cor_samepatient_difvisit_subset.png"), h = 5, w = 10)
+
+
+plot_correlation(data = ht_data_subset,
+                 subt = "Different patient, same visit",
+                 DAid1 = "DA11971",
+                 DAid2 = "DA11914") +
+
+plot_correlation(data = ht_data_subset,
+                 subt = "Different patient, same visit",
+                 DAid1 = "DA11972",
+                 DAid2 = "DA11914")
+
+ggsave(savepath("3828_cor_difpatient_samevisit_subset.png"), h = 5, w = 10)
+
+
+# Patient 1-3614
+plot_correlation(data = ht_data_subset,
+                 subt = "Same patient, same visit",
+                 DAid1 = "DA12092",
+                 DAid2 = "DA12100")
+
+ggsave(savepath("3614_cor_samepatient_samevisit_subset.png"), h = 5, w = 5)
+
+plot_correlation(data = ht_data_subset,
+                 subt = "Same patient, different visit",
+                 DAid1 = "DA12092",
+                 DAid2 = "DA11797") +
+
+plot_correlation(data = ht_data_subset,
+                 subt = "Same patient, different visit",
+                 DAid1 = "DA12100",
+                 DAid2 = "DA11797")
+
+ggsave(savepath("3614_cor_samepatient_difvisit_subset.png"), h = 5, w = 10)
+
+
+plot_correlation(data = ht_data_subset,
+                 subt = "Different patient, same visit",
+                 DAid1 = "DA12092",
+                 DAid2 = "DA12015") +
+
+plot_correlation(data = ht_data_subset,
+                 subt = "Different patient, same visit",
+                 DAid1 = "DA12100",
+                 DAid2 = "DA12015")
+
+ggsave(savepath("3614_cor_difpatient_samevisit_subset.png"), h = 5, w = 10)
+
+
+# Patient 1-3512
+plot_correlation(data = ht_data_subset,
+                 subt = "Same patient, same visit",
+                 DAid1 = "DA12126",
+                 DAid2 = "DA11851")
+
+ggsave(savepath("3512_cor_samepatient_samevisit_subset.png"), h = 5, w = 5)
+
+plot_correlation(data = ht_data_subset,
+                 subt = "Same patient, different visit",
+                 DAid1 = "DA12126",
+                 DAid2 = "DA11851") +
+
+plot_correlation(data = ht_data_subset,
+                 subt = "Same patient, different visit",
+                 DAid1 = "DA12127",
+                 DAid2 = "DA11851")
+
+ggsave(savepath("3512_cor_samepatient_difvisit_subset.png"), h = 5, w = 10)
+
+
+plot_correlation(data = ht_data_subset,
+                 subt = "Different patient, same visit",
+                 DAid1 = "DA12126",
+                 DAid2 = "DA12015") +
+
+plot_correlation(data = ht_data_subset,
+                 subt = "Different patient, same visit",
+                 DAid1 = "DA12127",
+                 DAid2 = "DA12015")
+
+ggsave(savepath("3512_cor_difpatient_samevisit_subset.png"), h = 5, w = 10)
+
+
+
+
+```
+
+### Longitudinal values for stable proteins
+
+```{r}
+assays_longitudinal <- c("GH2", "RASA1", "PDGFRB", "MEP1B", "PSPN")
+
+
+wellness_data |> 
+  filter(Assay %in% assays_longitudinal) |> 
+  left_join(wellness_meta) |> 
+  ggplot(aes(visit, NPX, color = subject, group = subject)) +
+  geom_point(show.legend = F) +
+  geom_line(show.legend = F) +
+  facet_wrap(~Assay, ncol = 1, scales = "free_y") +
+  theme_hpa()
+
+
+wellness_data |> 
+  filter(Assay %in% assays_longitudinal) |> 
+  left_join(wellness_meta) |> 
+  ggplot(aes(visit, NPX, color = subject, group = subject)) +
+  geom_point(show.legend = F) +
+  geom_line(show.legend = F) +
+  facet_wrap(~Assay, ncol = 1, scales = "free_y") +
+  theme_hpa()
+
+
+wellness_data |> 
+  filter(Assay %in% assays_longitudinal) |> 
+  left_join(wellness_meta) |> 
+  mutate(subject2 = ifelse(subject %in% duplicated_entires$subject, subject, "Other")) |> 
+  
+  mutate(subject2 = factor(ifelse(subject %in% duplicated_entires$subject, subject, "Other"),
+                           levels = c(unique(subject[subject %in% duplicated_entires$subject])))) |> 
+  ggplot(aes(visit, NPX, color = subject2, group = subject)) +
+  geom_point(show.legend = F) +
+  geom_line(show.legend = F) +
+  facet_wrap(~Assay, ncol = 1, scales = "free_y") +
+  theme_hpa()
+
+```
+
+
+## Number of visits per patient
+
+```{r}
+number_of_visits <- 
+  wellness_meta |> 
+  group_by(subject) |> 
+  summarise(Number_of_visits = n_distinct(visit)) |> 
+  arrange(Number_of_visits)  
+
+#write_tsv(number_of_visits, savepath("number_of_visits.tsv"))
+
+subjects_limited_visits <- 
+  number_of_visits |> 
+  filter(Number_of_visits < 3) |>
+  pull(subject)
+
+DAid_exclude_limited_visits <- 
+  wellness_meta |> 
+  filter(subject %in% subjects_limited_visits) |> 
+  pull(DAid)
+
+# Exclusion of subjects with < 3 visits
+wellness_data <-
+  wellness_data |>
+  filter(!DAid %in% DAid_exclude_limited_visits)
+
+wellness_meta <-
+  wellness_meta |>
+  filter(!DAid %in% DAid_exclude_limited_visits)
+```
+
+# Save one visit
+
+```{r}
+
+meta_visit_1 <- 
+  wellness_meta |> 
+  filter(visit == 1)
+
+data_visit_1 <- 
+  wellness_data |> 
+  filter(DAid %in% meta_visit_1$DAid)
+
+write_tsv(meta_visit_1, "data/processed/meta_visit_1.tsv")
+write_tsv(data_visit_1, "data/processed/data_visit_1.tsv")
+```
+
+
+# LOD
+
+Analyze the number of proteins consistently detected across all visits for each individual.
+High consistency in detection rates across visits and individuals supports technical reliability and biological stability.
+
+## Per sample 
+
+```{r}
+#- Detected in all
+#- Detected > 50% samples
+#- Detected < 50% samples
+#- Not detected in any
+pal_detectability <- c("None" = "#FF7176",
+                       "Some: < 50%" = "#E8A29A",
+                       "Some: > 50%" = "#AFB8B4",
+                       "All" = "#174A45")
+dat <- 
+  wellness_data |> 
+  left_join(wellness_meta |> 
+              select(DAid, subject, visit), by = "DAid") |> 
+  group_by(subject, Assay) |> 
+  summarize(above_LOD_count = sum(NPX > LOD), .groups = "drop") |> 
+  ungroup() |> 
+  group_by(subject) |> 
+  count(above_LOD_count)
+
+dat |> 
+  mutate(above_LOD_count = fct_rev(factor(above_LOD_count))) |> 
+  ggplot(aes(subject, n, fill = above_LOD_count)) +
+  geom_col() +
+  scale_fill_viridis_d("Number of visits", direction = -1) +
+  theme_hpa(angled = T) + #, axis_x = F
+  xlab("Subject")
+
+ggsave(savepath("LOD_per_sample_names.pdf"), h = 4, w = 18) #12
+
+
+dat_2 <- 
+  wellness_data |> 
+  left_join(wellness_meta |> 
+              select(DAid, subject, visit), by = "DAid") |> 
+  group_by(subject, Assay) |> 
+  summarize(above_LOD_count = sum(NPX > LOD), .groups = "drop") |> 
+  ungroup() |> 
+  left_join(number_of_visits, by = "subject") |> 
+  mutate(perc = above_LOD_count / Number_of_visits,
+         class = case_when(perc == 0 ~ "None",
+                           perc == 1 ~ "All",
+                           perc > 0 & perc <= 0.5 ~ "Some: < 50%",
+                           perc < 1 & perc > 0.5 ~ "Some: > 50%"))  |> 
+  group_by(subject) |> 
+  count(class)
+
+dat_2 |> 
+  filter(class == "All") |> 
+  arrange(-n)
+
+dat_2 |> 
+  mutate(class = factor(class, levels = rev(names(pal_detectability)))) |> 
+  ggplot(aes(subject, n, fill = class)) +
+  geom_col() +
+  scale_fill_manual(values = pal_detectability) +
+#  scale_fill_viridis_d("Number of visits", direction = -1) +
+  theme_hpa() + #, axis_x = F
+  xlab("Subject") +
+  theme(axis.ticks.x = element_blank(), 
+        axis.text.x = element_blank(),
+        axis.line.x = element_blank())
+
+ggsave(savepath("LOD_per_sample_names.pdf"), h = 6, w = 18) #12
+```
+
+## Overall
+
+```{r}
+none <- 
+  wellness_data |> 
+  group_by(Assay) |> 
+  count(above_LOD)  |> arrange(-n) |> 
+  filter(above_LOD == "No", n == 578)
+
+all <- 
+  wellness_data |> 
+  group_by(Assay) |> 
+  count(above_LOD)  |> arrange(-n) |> 
+  filter(above_LOD == "Yes", n == 578)
+
+more_50 <- 
+  wellness_data |> 
+  group_by(Assay) |> 
+  count(above_LOD)  |> arrange(-n) |> 
+  filter(above_LOD == "Yes", 
+         n > 578/2,
+         n != 578)
+less_50 <- 
+  wellness_data |> 
+  group_by(Assay) |> 
+  count(above_LOD)  |> arrange(-n) |> 
+  filter(above_LOD == "No", 
+         n > 578/2,
+         n != 578)
+
+data <- 
+  tibble("Class" = c("All", "Some: > 50%", "Some: < 50%", "None"),
+       "n" = c(nrow(all), nrow(more_50), nrow(less_50), nrow(none)))  |> 
+  mutate(percentage = n / sum(n) * 100,
+         label = paste0(Class, " (", round(percentage, 1), "%)"))
+
+# Create the pie chart
+ggplot(data, aes(x = "", y = n, fill = Class)) +
+  geom_col(width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  scale_fill_manual(values = pal_detectability) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks = element_blank(),
+        panel.grid = element_blank(),
+        legend.title = element_blank()) +
+  ylab("") +
+  xlab("") +
+  # Add numbers (n) as text labels
+  geom_text(aes(label = n), 
+            position = position_stack(vjust = 0.5), 
+            color = "white")
+
+ggsave(savepath("pie.pdf"), h = 7, w = 5)
+```
+
+# Secretome
+
+```{r}
+hpa <- read_tsv("data/hpa/proteinatlas.tsv")
+
+concentrations <- readxl::read_excel("data/concentrations_blood-atlas-build.xlsx")
+
+
+proteins <- 
+  all |> 
+  bind_rows(more_50) |> 
+  pull(Assay)
+
+saveRDS(proteins, "data/processed/proteins_high_detectability.rds")
+
+proteins <- 
+  none |> 
+  bind_rows(less_50) |> 
+  pull(Assay)
+
+
+
+donut_data <- 
+  tibble(Assay = proteins) |> 
+  left_join(hpa |> 
+              select(Gene, `Secretome location`), by = c("Assay" = "Gene")) |> 
+  mutate(`Secretome location` = ifelse(is.na(`Secretome location`), "Not secreted", `Secretome location`)) |> 
+  count(`Secretome location`) |> 
+  mutate(percentage = n / sum(n) * 100,  # Calculate percentage for each class
+         label = paste0(`Secretome location`, " (", n, ")"))  # Create labels
+
+
+
+# Donut plot
+donut_data |> 
+  ggplot(aes(x = 2, y = n, fill = `Secretome location`)) + 
+  geom_bar(stat = "identity", width = 1, color = "white") +  # Donut segments
+  coord_polar(theta = "y") +  # Convert to polar coordinates
+  xlim(1, 2.5) +  # Adjust to create the donut hole
+  theme_void() +  # Clean up chart
+  theme(legend.position = "right") +  # Move legend
+  scale_fill_manual(values = c(pal_secreted, "Not secreted" = "grey80")) +
+  geom_text(aes(label = ifelse(n > 25, n, "")),  # Display numbers only if n > 25
+            position = position_stack(vjust = 0.5),  # Center labels within segments
+            color = "white", size = 4)+
+  #ggtitle("High detectability (n = 2254")
+  ggtitle("Low detectability (n = 3154")
+
+
+
+ggsave(savepath("secretome_high.pdf"), h = 6, w = 6)
+ggsave(savepath("secretome_low.pdf"), h = 6, w = 6)
+
+```
+
+# UMAP
+
+Visualize stability of the proteome per sample.
+
+```{r}
+wellness_umap <- 
+  do_umap(data = wellness_data, wide = F, impute = T, plots = F)
+
+wellness_umap |> 
+  left_join(wellness_meta |> 
+              select(DAid, subject, visit), by =c("Sample" = "DAid")) |>
+  ggplot(aes(UMAP1, UMAP2, color = subject, frame = visit)) +
+  geom_point(show.legend = F) +
+  geom_line(aes(group = subject), show.legend = F) +
+  theme_hpa()
+
+wellness_umap |> 
+  left_join(wellness_meta |> 
+              select(DAid, subject, visit), by =c("Sample" = "DAid")) |>
+  filter(UMAP1 < -5)
+
+
+wellness_umap |> 
+  left_join(wellness_meta |> 
+              select(DAid, subject, visit), by =c("Sample" = "DAid")) |>
+  filter(subject %in% c("1−3016", "1−3913"))
+  mutate(outlier = ifelse(subject %in% c("1−3016", "1−3913"), "Yes", "No")) |> 
+  ggplot(aes(UMAP1, UMAP2, color = outlier, frame = visit)) +
+  geom_point(show.legend = F) +
+  geom_line(aes(group = subject), show.legend = F) +
+  theme_hpa()
+```
+
+## Interactive visualization
+
+```{r}
+dynamic_plot_data <- 
+  wellness_umap |> 
+  rename(DAid = Sample) |> 
+  left_join(wellness_meta, by = "DAid") 
+
+# Create the ggplot object
+p <- ggplot(dynamic_plot_data, aes(x = UMAP1, y = UMAP2, color = subject, frame = visit)) +
+  geom_point(show.legend = F) +
+  theme_hpa() +
+  labs(x = "UMAP1", y = "UMAP2")
+
+# Convert ggplot to a plotly object for interactivity
+p_dynamic <- ggplotly(p)
+
+# Display the dynamic plot
+p_dynamic
+```
+
+# Clustering
+
+```{r}
+clustering_data <- 
+  wellness_data |> 
+  select(DAid, Assay, NPX) |>
+  pivot_wider(names_from = Assay, values_from = NPX) 
+
+# Recipe for scaling and imputation
+knn_recipe <- recipe(~., data = clustering_data) %>%
+  update_role(DAid, new_role = "id") %>%  # Exclude DAid from clustering
+  step_impute_mean(all_predictors()) %>%  # Impute missing values with the mean
+  step_normalize(all_predictors())  # Normalize all predictors
+
+# Prepare the recipe
+prepped_recipe <- prep(knn_recipe)
+
+# Preprocessed data
+processed_data <- bake(prepped_recipe, new_data = NULL)
+
+# Set DAid as rownames for clustering
+normalized_data <- processed_data |> column_to_rownames("DAid")
+
+# Normalize rows to L2 norm for cosine similarity
+normalized_data <- normalized_data / sqrt(rowSums(normalized_data^2))
+
+# Find neighbors using cosine similarity
+neighbors <- get.knnx(data = normalized_data, query = normalized_data, k = 6, algorithm = "brute")
+
+# View nearest neighbors
+print(neighbors$nn.index)
+knn_indices <- neighbors$nn.index
+
+# View distances (cosine similarities)
+print(neighbors$nn.dist)
+knn_distances <- neighbors$nn.dist
+```
+
+## Network
+
+```{r}
+# Prepare clustering_data
+sample_to_patient <- 
+  clustering_data %>%
+  rownames_to_column(var = "SampleID") %>%
+  select(SampleID, PatientID = DAid) |> 
+  left_join(wellness_meta |> 
+              select(PatientID = DAid, subject), by = "PatientID") 
+
+# Create the edge list with distances
+edge_list <- tibble()
+
+for (i in 1:nrow(knn_indices)) {
+  source_node <- normalized_data$DAid[i]
+  target_nodes <- normalized_data$DAid[knn_indices[i, -1]]  # Exclude the query itself
+  distances <- knn_distances[i, -1]  # Corresponding distances (excluding the query's own distance)
+
+  # Create edge list with distance as an attribute
+  edges <- tibble(
+    from = source_node,
+    to = target_nodes,
+    distance = distances  # Add distance for edge thickness/weight
+  )
+  
+  edge_list <- bind_rows(edge_list, edges)
+}
+
+# Remove duplicate edges (since the graph is undirected)
+edge_list <- edge_list %>% distinct()
+
+# Create igraph object from edge list
+graph <- graph_from_data_frame(edge_list, directed = FALSE)
+
+# Add PatientID to the nodes as a vertex attribute for coloring
+V(graph)$subject <- sample_to_patient$subject[match(V(graph)$name, sample_to_patient$PatientID)]
+
+# Visualize the network
+ggraph(graph, layout = "fr") +  # 'fr' = Fruchterman-Reingold layout
+  geom_edge_link(aes(width = distance), alpha = 0.7, color = "grey") +  # Use distance for edge width
+  geom_node_point(aes(color = as.factor(subject)), size = 3, show.legend = F) +  # Color nodes by PatientID
+  #scale_color_viridis_d(name = "Patient ID") +  # Viridis color palette for nodes
+  scale_edge_width(range = c(0.1, 2)) +  # Scale edge width by distance
+  theme_void()
+
+ggsave(savepath("knn_network.pdf"), h = 10, w = 10)
+
+```
+
+## Purity
+
+```{r}
+# Get the indices of the nearest neighbors
+neighbors_list <- neighbors$nn.index
+
+# Initialize an empty vector to store purity values
+purity <- numeric(nrow(neighbors_list))
+
+# Calculate the purity for each sample (i.e., percentage of neighbors that belong to the same patient)
+purity_res <- 
+  map_df(1:nrow(neighbors_list), function(i) {
+    
+    # Get the SampleID for the current sample
+    current_sample <- rownames(normalized_data)[i]  # Using the row index
+    
+    # Get the PatientID of the current sample
+    current_daid <- sample_to_patient$PatientID[sample_to_patient$SampleID == current_sample]
+    
+    current_patient <- sample_to_patient$subject[sample_to_patient$PatientID == current_daid]
+    
+    # Get the SampleIDs of the nearest neighbors (using the indices from neighbors_list)
+    neighbor_samples <- rownames(normalized_data)[neighbors_list[i, ]]
+    
+    # Get the PatientIDs of the nearest neighbors
+    neighbor_daids <- sample_to_patient$PatientID[sample_to_patient$SampleID %in% neighbor_samples]
+    
+    neighbor_patients <- sample_to_patient$subject[sample_to_patient$PatientID %in% neighbor_daids]
+    
+    # Calculate the purity (percentage of neighbors that have the same PatientID)
+    purity_value <- sum(neighbor_patients == current_patient) / length(neighbor_patients)
+    
+    # Store the purity value for the current sample
+    tibble(Sample = current_sample,
+           DAid = current_daid,
+           subject = current_patient,
+           purity = purity_value)
+    
+    #purity[i] <- purity_value
+  })
+
+# Check the first few purity values
+purity_res |> 
+  ggplot(aes(x = fct_reorder(Sample, purity), y = purity, fill = subject)) +
+  geom_col(show.legend = F) +
+  coord_flip() +
+  theme_hpa(axis_y = F)
+
+ggsave(savepath("purity_values.pdf"), h = 8, w = 2.5)
+```
+
+
+
+# ANOVA
+
+```{r}
+data_anova <- 
+  wellness_data |> 
+  select(DAid, Assay, NPX) %>%
+  left_join(wellness_meta, by = "DAid") |> 
+  mutate(sex = as.factor(sex),
+         visit = as.factor(visit),
+         subject = as.factor(subject),
+         month_of_sampling = as.factor(month_of_sampling))
+
+# Test the function on one protein
+anova_all_proteins <- 
+  map_df(unique(all$Assay), function(protein) {
+    
+    do_anova(df = data_anova, 
+             protein = protein)
+    
+  })
+```
+
+## Visualize
+
+```{r}
+dat <- 
+  anova_all_proteins |> 
+  group_by(Protein) |> 
+  filter(term != "Residuals") |> 
+  mutate(Total_variance = sum(Eta2_perc)) |> 
+  arrange(-Total_variance) 
+
+top_variance <- 
+  dat |> 
+  filter(Total_variance > 40) |> 
+  distinct(Protein) |> 
+  pull()
+
+dat |> 
+  ggplot(aes(x = reorder(Protein, -Total_variance), y = Eta2_perc, fill = term)) +
+  geom_col() +
+  theme_hpa(angled = T) +
+  scale_fill_manual(values = pal_anova_wellness) +
+  ylab("% of variance explained") +
+  xlab("") 
+
+#ggsave(savepath("anova_DA.pdf"), h = 4, w = 13)
+
+# Top proteins
+dat |> 
+  filter(Protein %in% top_variance) |>
+  ggplot(aes(x = reorder(Protein, -Total_variance), y = Eta2_perc, fill = term)) +
+  geom_col(show.legend = F) +
+  theme_hpa(angled = T) +
+  scale_fill_manual(values = pal_anova) +
+  ylab("% of variance explained") +
+  xlab("") 
+
+#ggsave(savepath("anova_DA_top.pdf"), h = 5, w = 15)
+```
+
+# Mixed models
+
+Identify proteins that are significantly differentially expressed between visits. Summarize as volcano plot & boxplots. 
+
+Reinforce stability of the proteome by showing that very few proteins change over time. Highlight how few proteins vary across visits.
+
+```{r}
+# Prepare data for mixed effect modelling
+data_mixed_model <- 
+  wellness_data |> 
+  select(DAid, Assay, NPX) %>%
+  left_join(wellness_meta |> 
+              mutate(visit = as.numeric(visit)) |> 
+              select(DAid, subject, visit, age, sex), by = "DAid")
+
+# Run mixed effect models on all proteins 
+mm_all_proteins <- 
+  map_df(unique(wellness_data$Assay), function(protein) {
+    
+    do_mixed_effect_model(df = data_mixed_model, 
+                          protein = protein)
+    
+  })
+
+# Visit should be continuous or numeric?
+fixed_effects <- 
+  map_df(unique(wellness_data$Assay), function(protein) {
+    
+    do_mixed_effect_model(df = data_mixed_model, 
+                          type = "variance_explained",
+                          protein = protein)
+    
+  })
+
+variance_explained <- 
+  map_df(unique(wellness_data$Assay), function(protein) {
+    
+    do_mixed_effect_model(df = data_mixed_model, 
+                          type = "variance_explained",
+                          protein = protein)
+    
+  })
+
+order <- 
+  fixed_effects |> 
+  filter(Component == "Random Effects (Subject)") |> 
+  arrange(-Proportion)
+
+variance_explained |> 
+  mutate(Assay = factor(Assay,
+                        levels = order$Assay)) |> 
+  filter(Component != "Residual") |> 
+  ggplot(aes(Assay, Proportion, fill = Component)) +
+  geom_col(position = "stack") +
+  scale_fill_manual(values = c("#E8A29A", "#ABC8F6")) +
+  theme_hpa(axis_x = F)
+ggsave(savepath("MM-variance-explained.pdf"), h = 4, w = 18)
+
+
+variance_explained
+
+fixed_effects
+```
+
+## Visualize
+
+```{r}
+# Age
+dat_age <- 
+  mm_all_proteins |> 
+  filter(term == "age") |> 
+  arrange(p.value) |> 
+  mutate(sig = case_when(p.value< 0.06 & estimate > 0 ~ "significant up",
+                         p.value< 0.06 & estimate < 0 ~ "significant down",
+                         TRUE ~ "not significant"))
+
+labels_age <- 
+  dat_age |> 
+  top_n(n = 10, wt = -log10(p.value)) 
+
+volcano_plot_age <- 
+  dat_age |> 
+  ggplot(aes(x = estimate, y = -log10(p.value), color = sig, label = Protein)) +
+  geom_point(size = 1, alpha = 0.4, show.legend = F) + 
+  geom_text_repel(data = labels_age, size = 2, show.legend = F) +
+  geom_hline(yintercept = -log10(0.05), linetype = 'dashed', color = "darkgrey") +
+  #geom_vline(xintercept = -1, linetype = 'dashed', color = "darkgrey") +
+ # geom_vline(xintercept = 1, linetype = 'dashed', color = "darkgrey") +
+  scale_color_manual(values = pal_de) +
+  theme_hpa() +   
+  theme(axis.text = element_text(size = 8),
+        legend.position = "top") 
+
+# Sex
+dat_sex <- 
+  mm_all_proteins |> 
+  filter(term == "sexM") |> 
+  arrange(p.value) |> 
+  mutate(sig = case_when(p.value< 0.06 & estimate > 0 ~ "significant up",
+                         p.value< 0.06 & estimate < 0 ~ "significant down",
+                         TRUE ~ "not significant"))
+labels_sex <- 
+  dat_sex |> 
+  top_n(n = 10, wt = -log10(p.value)) 
+
+volcano_plot_sex <- 
+  dat_sex |> 
+  ggplot(aes(x = estimate, y = -log10(p.value), color = sig, label = Protein)) +
+  geom_point(size = 1, alpha = 0.4, show.legend = F) + 
+  geom_text_repel(data = labels_sex, size = 2, show.legend = F) +
+  geom_hline(yintercept = -log10(0.05), linetype = 'dashed', color = "darkgrey") +
+  #geom_vline(xintercept = -1, linetype = 'dashed', color = "darkgrey") +
+ # geom_vline(xintercept = 1, linetype = 'dashed', color = "darkgrey") +
+  scale_color_manual(values = pal_de) +
+  theme_hpa() +   
+  theme(axis.text = element_text(size = 8),
+        legend.position = "top") 
+
+volcano_plot_sex + volcano_plot_age
+ggsave(savepath("volcanos_wellness_MM.pdf"), h = 4, w = 10)
+
+volcano_plot_age
+ggsave(savepath("volcano_age_MM_wellness.pdf"), h = 4, w = 5)
+```
+
+## Proteins age
+
+```{r}
+top_age_proteins <- 
+  dat_age |> 
+  group_by(sig) |>
+  top_n(n = 4, wt = -log10(p.value)) |> 
+  filter(sig != "not significant") 
+
+wellness_data |> 
+  filter(Assay %in% top_age_proteins$Protein) |>
+  left_join(wellness_meta |> 
+              select(DAid, subject, age, visit)) |> 
+  mutate(Assay = factor(Assay, levels = top_age_proteins$Protein)) |>
+  ggplot(aes(age, NPX, color = age)) +
+  geom_line(aes(group = subject), alpha = 0.3, color = "grey80") +
+  geom_point() +
+  geom_smooth(method = "lm", se = F, color = "white") +
+  #geom_quasirandom(alpha = 0.7, show.legend = F) +
+ # geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
+ # scale_color_manual(values = pal_bamse) +
+  scale_color_viridis_c(option = "magma") +
+  facet_wrap(~Assay, scales = "free_y", nrow = 1) +
+  theme_hpa() 
+  
+ggsave(savepath("top_age_proteins_bamse.pdf"), h = 2.5, w = 12)
+
+wellness_data |> 
+  filter(Assay %in% top_age_proteins$Protein) |>
+  left_join(wellness_meta |> 
+              select(DAid, subject, age, visit)) |> 
+  mutate(Assay = factor(Assay, levels = top_age_proteins$Protein)) |>
+  ggplot(aes(visit, NPX, color = visit)) +
+  geom_line(aes(group = subject), alpha = 0.3, color = "grey80") +
+  geom_point() +
+  #geom_smooth(method = "lm", se = F, color = "white") +
+  geom_quasirandom(alpha = 0.7, show.legend = F) +
+  geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
+ # scale_color_manual(values = pal_bamse) +
+  scale_color_viridis_d(option = "magma") +
+  facet_wrap(~Assay, scales = "free_y", nrow = 2) +
+  theme_hpa(axis_x = F) 
+  
+ggsave(savepath("top_age_proteins_wellness_d.pdf"), h = 2.5, w = 12)
+ggsave(savepath("top_age_proteins_wellness_d.pdf"), h = 3.5, w = 8)
+
+
+top_sex_proteins <- 
+  dat_sex |> 
+  group_by(sig) |>
+  top_n(n = 4, wt = -log10(p.value)) |> 
+  filter(sig != "not significant") 
+
+bamse_data |> 
+  filter(Assay %in% top_sex_proteins$Protein) |>
+  left_join(bamse_meta |> 
+              select(DAid, subject, Sex)) |> 
+  mutate(Assay = factor(Assay, levels = top_sex_proteins$Protein)) |>
+  ggplot(aes(Sex, NPX, color = Sex)) +
+  geom_line(aes(group = subject), alpha = 0.3, color = "grey80") +
+  geom_quasirandom(alpha = 0.7, show.legend = F) +
+  geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
+  #scale_color_manual(values = pal_bamse) +
+  facet_wrap(~Assay, scales = "free_y", nrow = 1) +
+  theme_hpa(axis_x = F) 
+
+ggsave(savepath("top_sex_proteins_wellness.pdf"), h = 2.5, w = 12)
+
+```
+
+## Compre with BAMSE 
+
+```{r}
+mm_bamse <- readRDS("data/processed/MM_BAMSE.rds")
+
+mm_comparison <- 
+  mm_bamse |> 
+  filter(term %in% c("age", "sexM")) |> 
+  select(Protein, term, estimate_BAMSE = estimate, p.value_BAMSE = p.value) |>
+  left_join(mm_all_proteins |> 
+              filter(term %in% c("age", "sexM")) |> 
+              select(Protein, term, estimate_Wellness = estimate, p.value_Wellness = p.value) ) 
+
+mm_comparison |> 
+  filter(term == "age") |> 
+  ggplot(aes(estimate_BAMSE, estimate_Wellness)) +
+  geom_point() +
+  geom_text_repel(aes(label = Protein), size = 2) +
+  theme_hpa()
+
+ggsave(savepaht("comparison_age_estimate.png"), w = 4, h = 4)
+
+mm_comparison |> 
+  filter(term == "age") |> 
+  ggplot(aes(-log10(p.value_BAMSE), -log10(p.value_Wellness))) +
+  geom_point() +
+  geom_text_repel(aes(label = Protein), size = 2) +
+  theme_hpa()
+
+ggsave(savepath("comparison_age_pval.png"), w = 7, h = 7)
+
+
+mm_comparison |> 
+  filter(term == "sex") |> 
+  ggplot(aes(estimate_BAMSE, estimate_Wellness)) +
+  geom_point() +
+  geom_text_repel(aes(label = Protein), size = 2) +
+  theme_hpa()
+
+ggsave(savepath("comparison_sex_estimate.png"), w = 4, h = 4)
+
+mm_comparison |> 
+  filter(term == "sexM") |> 
+  ggplot(aes(-log10(p.value_BAMSE), -log10(p.value_Wellness))) +
+  geom_point() +
+  geom_text_repel(aes(label = Protein), size = 4) +
+  theme_hpa()
+
+ggsave(savepath("comparison_sex_pval.png"), w = 7, h = 7)
+```
+
+
+
+# Intra- vs inter- individual variation
+
+* What to show:
+    * Decompose protein variance into inter-individual (between different people) and intra-individual (within the same person across visits) components.
+    * Visualize:
+        * Boxplots showing variance components per protein.
+        * Heatmap showing proteins with high inter-individual vs. intra-individual variance.
+* Potential insights:
+    * Highlight proteins that are highly individual-specific and stable over time.
+    
+```{r}
+
+```
+
+
+
+# Correlation between visits for each protein
+
+Pairwise correlations of proteome profiles between visits per individual.
+
+```{r}
+
+cor_df <- 
+  map_df(unique(wellness_data$Assay), function(protein) {
+    
+    cor_matrix <- 
+      wellness_data |> 
+      filter(Assay == protein) |> 
+      left_join(wellness_meta |> 
+                  select(DAid, subject, visit), by = "DAid") |> 
+      filter(!DAid %in% DAid_exclude) |>
+      select(subject, visit, Assay, NPX) |> 
+      pivot_wider(names_from = visit,
+                  values_from = NPX) |> 
+      select(-Assay) |> 
+      column_to_rownames("subject") |>
+      cor(method = "spearman", use = "complete.obs") 
+    
+    tibble(Protein = protein, 
+           mean_cor = cor_matrix[upper.tri(cor_matrix)] |> mean())
+    
+    
+  })
+
+cor_df |> 
+  arrange(mean_cor)
+cor_df |> 
+  ggplot(aes( mean_cor)) +
+  geom_histogram() +
+  geom_vline(aes(xintercept = mean(mean_cor)), color = "red") +
+  theme_hpa()
+
+ggsave(savepath("cor_proteins.png"), width = 10, height = 6)
+
+cor_df |> 
+  ggplot(aes(x = "Protein", y = mean_cor)) +
+  geom_quasirandom() +
+  theme_hpa()
+
+protein <- "PPP3CA"
+
+
+ cor_matrix <- 
+      wellness_data |> 
+      filter(Assay == protein) |> 
+      left_join(wellness_meta |> 
+                  select(DAid, subject, visit), by = "DAid") |> 
+      filter(!DAid %in% DAid_exclude) |>
+      select(subject, visit, Assay, NPX) |> 
+      pivot_wider(names_from = visit,
+                  values_from = NPX) |> 
+      select(-Assay) |> 
+      column_to_rownames("subject") |>
+      cor(method = "spearman", use = "complete.obs") 
+
+ pheatmap(cor_matrix) 
+ 
+ wellness_data |> 
+      filter(Assay == protein) |> 
+      left_join(wellness_meta |> 
+                  select(DAid, subject, visit, sex), by = "DAid") |> 
+      filter(!DAid %in% DAid_exclude) |>
+      select(subject, visit, Assay, NPX, sex) |> 
+   ggplot(aes(x = visit, y = NPX, color = subject)) +
+   geom_point(show.legend = F) +
+   geom_line(aes(group = subject), show.legend = F) +
+   theme_hpa()
+
+ cor_df |> 
+  ggplot(aes(x = mean_cor)) +
+  geom_histogram(bins = 20) +
+  geom_vline(aes(xintercept = median(mean_cor)), color = "red") +
+  theme_hpa() +
+  ggtitle("All proteins")
+
+cor_df |> 
+  filter(!Protein %in% more_50$Assay) |> 
+  ggplot(aes(x = mean_cor)) +
+  geom_histogram(bins = 20) +
+  geom_vline(aes(xintercept = median(mean_cor)), color = "red") +
+  theme_hpa() +
+  ggtitle("All proteins")
+
+#|> 
+  pheatmap()
+
+wellness_meta |> filter(subject == "1-3512")
+  distinct(DAid, subject, visit) |> 
+  group_by(subject) |> 
+  count(visit) |> 
+  arrange(-n)
+```
+
+
+# ------
+
+# Clustering
+
+```{r}
+clustering_data <- 
+  wellness_data |> 
+  select(DAid, Assay, NPX) |>
+  pivot_wider(names_from = Assay, values_from = NPX) 
+
+
+# Recipe for scaling and imputation
+knn_recipe <- recipe(~., data = clustering_data) %>%
+  update_role(DAid, new_role = "id") %>%  # Exclude DAid from clustering
+  step_impute_mean(all_predictors()) %>%  # Impute missing values with the mean
+  step_normalize(all_predictors())  # Normalize all predictors
+
+# Prepare the recipe
+prepped_recipe <- prep(knn_recipe)
+
+# Preprocessed data
+processed_data <- bake(prepped_recipe, new_data = NULL)
+
+# Set DAid as rownames for clustering
+normalized_data <- processed_data |> column_to_rownames("DAid")
+
+# Normalize rows to L2 norm for cosine similarity
+normalized_data <- normalized_data / sqrt(rowSums(normalized_data^2))
+
+# Find neighbors using cosine similarity
+neighbors <- get.knnx(data = normalized_data, query = normalized_data, k = 6, algorithm = "brute")
+
+# View nearest neighbors
+print(neighbors$nn.index)
+ knn_indices <- neighbors$nn.index
+# View distances (cosine similarities)
+print(neighbors$nn.dist)
+
+knn_distances <- neighbors$nn.dist
+
+```
+
+## Network
+
+```{r}
+# Prepare clustering_data
+sample_to_patient <- 
+  clustering_data %>%
+  rownames_to_column(var = "SampleID") %>%
+  select(SampleID, PatientID = DAid) |> 
+  left_join(wellness_meta |> 
+              select(PatientID =DAid, subject), by = "PatientID") 
+
+# Create edge list from knn_indices
+edge_list <- tibble()
+
+for (i in 1:nrow(knn_indices)) {
+  source_node <- normalized_data$SampleID[i]
+  target_nodes <- normalized_data$SampleID[knn_indices[i, -1]] # Exclude the query itself
+  edges <- tibble(
+    from = source_node,
+    to = target_nodes
+  )
+  edge_list <- bind_rows(edge_list, edges)
+}
+
+# Remove duplicates (undirected graph)
+edge_list <- edge_list %>%
+  distinct()
+
+# Create igraph object
+graph <- graph_from_data_frame(edge_list, directed = FALSE)
+
+# Add PatientID as a node attribute
+V(graph)$PatientID <- sample_to_patient$PatientID[match(V(graph)$name, sample_to_patient$SampleID)]
+
+# Visualize the network
+ggraph(graph, layout = "fr") +  # 'fr' = Fruchterman-Reingold layout
+  geom_edge_link(alpha = 0.5) +
+  geom_node_point(aes(color = as.factor(PatientID)), size = 3) +
+  scale_color_viridis_d(name = "Patient ID") +  # Use a distinct color palette
+  theme_minimal() +
+  theme(legend.position = "right") +
+  theme_void()
+```
+
+```{r}
+
+library(igraph)
+library(ggraph)
+library(tidyverse)
+
+# Create edge list from knn_indices
+edge_list <- tibble()
+
+for (i in 1:nrow(knn_indices)) {
+  source_node <- normalized_data$SampleID[i]
+  target_nodes <- normalized_data$SampleID[knn_indices[i, -1]] # Exclude the query itself
+  edges <- tibble(
+    from = source_node,
+    to = target_nodes
+  )
+  edge_list <- bind_rows(edge_list, edges)
+}
+
+# Remove duplicates (undirected graph)
+edge_list <- edge_list %>%
+  distinct()
+
+# Create igraph object
+graph <- graph_from_data_frame(edge_list, directed = FALSE)
+
+# Add PatientID as a node attribute
+V(graph)$PatientID <- sample_to_patient$PatientID[match(V(graph)$name, sample_to_patient$SampleID)]
+
+# Visualize the network
+ggraph(graph, layout = "fr") +  # 'fr' = Fruchterman-Reingold layout (force-directed)
+  geom_edge_link(aes(weight = distance), alpha = 0.7) +  # Use distance for edge weight
+  geom_node_point(aes(color = as.factor(PatientID)), size = 3) +  # Color nodes by PatientID
+  scale_color_viridis_d(name = "Patient ID") +  # Viridis color palette for nodes
+  scale_edge_width(range = c(0.1, 1)) +  # Scale edge width by distance
+  theme_minimal() +
+  theme(legend.position = "right") +
+  ggtitle("k-NN Clustering Network (Proportional Distances)")
+
+```
+
+```{r}
+# Create the edge list with distances
+edge_list <- tibble()
+
+for (i in 1:nrow(knn_indices)) {
+  source_node <- normalized_data$SampleID[i]
+  target_nodes <- normalized_data$SampleID[knn_indices[i, -1]]  # Exclude the query itself
+  distances <- knn_distances[i, -1]  # Corresponding distances (excluding the query's own distance)
+
+  # Create edge list with distance as an attribute
+  edges <- tibble(
+    from = source_node,
+    to = target_nodes,
+    distance = distances  # Add distance for edge thickness/weight
+  )
+  
+  edge_list <- bind_rows(edge_list, edges)
+}
+
+# Remove duplicate edges (since the graph is undirected)
+edge_list <- edge_list %>% distinct()
+
+# Create igraph object from edge list
+graph <- graph_from_data_frame(edge_list, directed = FALSE)
+
+# Add PatientID to the nodes as a vertex attribute for coloring
+V(graph)$subject <- sample_to_patient$subject[match(V(graph)$name, sample_to_patient$PatientID)]
+
+# Visualize the network
+ggraph(graph, layout = "fr") +  # 'fr' = Fruchterman-Reingold layout
+  geom_edge_link(aes(width = distance), alpha = 0.7, color = "grey") +  # Use distance for edge width
+  geom_node_point(aes(color = as.factor(subject)), size = 3, show.legend = F) +  # Color nodes by PatientID
+  #scale_color_viridis_d(name = "Patient ID") +  # Viridis color palette for nodes
+  scale_edge_width(range = c(0.1, 2)) +  # Scale edge width by distance
+  theme_void()
+
+ggsave(savepath("knn_network.pdf"), h = 10, w = 10)
+
+```
+
+## Purity
+
+```{r}
+# Get the indices of the nearest neighbors
+neighbors_list <- neighbors$nn.index
+
+# Initialize an empty vector to store purity values
+purity <- numeric(nrow(neighbors_list))
+
+# Calculate the purity for each sample (i.e., percentage of neighbors that belong to the same patient)
+purity_res <- 
+  map_df(1:nrow(neighbors_list), function(i) {
+    
+    # Get the SampleID for the current sample
+    current_sample <- rownames(normalized_data)[i]  # Using the row index
+    
+    # Get the PatientID of the current sample
+    current_daid <- sample_to_patient$PatientID[sample_to_patient$SampleID == current_sample]
+    
+    current_patient <- sample_to_patient$subject[sample_to_patient$PatientID == current_daid]
+    
+    # Get the SampleIDs of the nearest neighbors (using the indices from neighbors_list)
+    neighbor_samples <- rownames(normalized_data)[neighbors_list[i, ]]
+    
+    # Get the PatientIDs of the nearest neighbors
+    neighbor_daids <- sample_to_patient$PatientID[sample_to_patient$SampleID %in% neighbor_samples]
+    
+    neighbor_patients <- sample_to_patient$subject[sample_to_patient$PatientID %in% neighbor_daids]
+    
+    # Calculate the purity (percentage of neighbors that have the same PatientID)
+    purity_value <- sum(neighbor_patients == current_patient) / length(neighbor_patients)
+    
+    # Store the purity value for the current sample
+    tibble(Sample = current_sample,
+           DAid = current_daid,
+           subject = current_patient,
+           purity = purity_value)
+    
+    #purity[i] <- purity_value
+  })
+
+# Check the first few purity values
+purity_res |> 
+  ggplot(aes(x = fct_reorder(Sample, purity), y = purity, fill = subject)) +
+  geom_col(show.legend = F) +
+  coord_flip() +
+  theme_hpa(axis_y = F)
+
+ggsave(savepath("purity_values.pdf"), h = 8, w = 2.5)
+```
+
+
+# Stability
+
+* Quantify stability metrics, such as intraclass correlation coefficients (ICC), for proteins across visits.
+* Summarize:
+        * Scatterplots showing ICC values for proteins.
+        * Highlight highly stable proteins vs. less stable ones.
+* Potential insights:
+    * Most proteins are stable over time, with a subset showing variability.
+
+```{r}
+
+```
+
+
+# Correlation between proteins
+
+```{r}
+ann <- 
+  wellness_meta |> 
+  select(DAid, subject, visit) |> 
+  column_to_rownames("DAid")
+
+cor_samples <- 
+  wellness_data |> 
+  select(DAid, Assay, NPX) |> 
+filter(!Assay %in% c("GBP1", "MAP2K1")) |> 
+  pivot_wider(names_from = Assay, values_from = NPX) |> 
+  column_to_rownames("DAid") |> 
+  cor(method = "spearman", use = "complete.obs") 
+
+cor_samples |> 
+  pheatmap(annotation_rows = ann)
+
+```
+
+# Correlation between samples
+
+```{r}
+
+cor_wellness_samples <- 
+  wellness_data |> 
+  select(DAid, Assay, NPX) |> 
+  pivot_wider(names_from = Assay, 
+              values_from = NPX) |>
+  column_to_rownames("DAid") |> 
+  cor(use = "complete.obs", method = "spearman")
+
+annotation <- 
+  wellness_meta |> 
+  select(DAid, subject, visit)
+
+cor_wellness_samples |> 
+  pheatmap(annotation_rows = annotation)
+
+```
+
+# Prediction models
+
+* Train a machine learning model (e.g., random forest or lasso regression) to predict individual ID from the proteome.
+* Potential insights:
+    * Proteomic profiles are so individual-specific that they can serve as a "fingerprint."
+    
+```{r}
+
+
+ml_data <- 
+  wellness_data |>
+  left_join(wellness_meta |> 
+              select(DAid, subject), by = "DAid") |> 
+  select(DAid, subject, Assay, NPX) |> 
+  pivot_wider(names_from = Assay,
+              values_from = NPX) 
+
+data_split <- initial_split(ml_data, prop = 0.8, strata = subject)
+
+training_dat <- training(data_split)
+testing_dat <- testing(data_split)
+
+# Define recipe
+    ml_recipe <- 
+      recipe(subject ~ ., data = training_dat) |> 
+      #step_relevel(Class, ref_level = "Control") |> 
+      update_role(DAid, new_role = "id") |> 
+      step_normalize(all_numeric_predictors()) |> 
+      step_nzv(all_numeric_predictors()) |> 
+      step_impute_knn(all_numeric_predictors()) 
+    
+    # LASSO model specifications
+    glmnet_specs <- 
+      multinom_reg() |> 
+      set_mode("classification") |> 
+      set_engine("glmnet") |> 
+      set_args(penalty = tune(), 
+               mixture = 0) 
+    
+    # ML workflow
+    glmnet_wflow <-
+      workflow() |> 
+      add_recipe(ml_recipe) |> 
+      add_model(glmnet_specs) 
+    
+    # Define glmnet grid
+    set.seed(213)
+    glmnet_grid <-
+      glmnet_wflow |>
+      extract_parameter_set_dials() |>
+      grid_latin_hypercube(size = 10)
+    
+    # Define the resamples (CV)
+    set.seed(213)
+    ml_rs <- vfold_cv(training_dat, v = 10, strata = subject)
+    
+    # Define the evaluation metrics (add brier)
+    eval_metrics <- metric_set(roc_auc)
+    
+    # Define control_grid
+    set.seed(213)
+    ctrl <- control_grid(save_pred = TRUE, 
+                         event_level = "second",
+                         parallel_over = "everything") # look at extract = identity
+    
+    # Glmnet grid search
+    set.seed(213)
+    glmnet_res <-
+      glmnet_wflow |>
+      tune_grid(
+        resamples = ml_rs,
+        grid = glmnet_grid,
+        control = ctrl,
+        metrics = eval_metrics
+      )
+
+    plot_train <- autoplot(glmnet_res)
+    
+    predictions_train <- 
+      glmnet_res |> 
+      collect_predictions()
+    
+    metrics_train <- 
+      glmnet_res |> 
+      collect_metrics()
+    
+    # Select best hyperparameter
+    best_glmnet <- 
+      select_best(glmnet_res, metric = "roc_auc") |> 
+      select(-.config)
+    
+    #Finalize the workflow and fit the final model
+    glmnet_wflow <- 
+      glmnet_wflow |>  
+      finalize_workflow(best_glmnet)
+    
+    final_glmnet_fit <- last_fit(glmnet_wflow,
+                                 ml_split_custom, 
+                                 metrics = eval_metrics) 
+    
+    # Extract model performance
+    performance <- 
+      final_glmnet_fit |> 
+      collect_metrics() |> 
+      select(-.config, -.estimator)
+    
+    glmnet_auc <- 
+      final_glmnet_fit |> 
+      collect_metrics() |> 
+      filter(.metric == "roc_auc") |> 
+      pull(.estimate) |> 
+      round(2)
+    
+    # Extract protein importance
+    important_proteins <- 
+      final_glmnet_fit |> 
+      extract_fit_parsnip()  |> 
+      vip::vi(lambda = best_glmnet$penalty, event_level = "second")  |> 
+      mutate(
+        Importance = abs(Importance),
+        Variable = fct_reorder(Variable, Importance)
+      )
+    
+    # Extract model predictions
+    predictions <- 
+      final_glmnet_fit |> 
+      collect_predictions(summarize = F) 
+    
+    # Confusion matrix
+    cm <-
+      predictions |>
+      mutate(pred = ifelse(.pred_Control > 0.5, "Control", "Case"),
+             Class = ifelse(Class == "Control", "Control", "Case")) |>
+      mutate(Class = factor(Class, levels = c("Case", "Control")),
+             pred = factor(pred, levels = c("Case", "Control"))) |> 
+      conf_mat(Class, pred)
+    
+    # ROC curve
+    roc <- 
+      predictions |>
+      roc_curve(truth = Class, .pred_Case, event_level = "second") 
+    
+    
+
+```
+
+
