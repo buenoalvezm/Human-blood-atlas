@@ -1,0 +1,81 @@
+---
+title: "02_disease_profiling"
+output: html_document
+autor: "María Bueno Álvez"
+date: "2024-12-13"
+editor_options: 
+  chunk_output_type: console
+---
+
+# Set up
+
+```{r}
+source("scripts/functions/functions_analyses.R")
+source("scripts/functions/functions_utility.R")
+source("scripts/functions/functions_visualization.R")
+source("scripts/functions/themes_palettes.R")
+
+# Read in data
+wellness_data <- X
+wellness_meta <- X
+```
+
+
+# Cohort overview
+
+```{r}
+
+```
+
+# UMAP
+
+```{r}
+
+```
+
+# Disease correlation
+
+```{r}
+
+```
+
+# Differential expression
+
+```{r}
+
+```
+
+## Network
+
+```{r}
+
+```
+
+## Overlap
+
+```{r}
+
+```
+
+# Machine learning 
+
+## Read results from cluster 
+
+```{r}
+
+```
+
+## Confusion matrix
+
+```{r}
+
+```
+
+## Number of associated proteins 
+
+(On top?)
+
+```{r}
+
+```
+
