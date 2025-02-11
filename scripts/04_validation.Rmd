@@ -651,12 +651,53 @@ ovc_p1 <- do_lasso_binary(disease = "Ovarian cancer",
                           split_train = ucan_p1_split$data_train, 
                           split_test = ucan_p1_split$data_test) 
 
+ovc_p1$important_proteins 
 
 ```
 
 ### Phase 2
 
 ```{r}
+# Prepare metadata Olink HT
+ucan_meta_p2 <- 
+  manifest |> 
+  filter(DAid %in% ucan_data$DAid) |> 
+  filter(Diagnose != "bridge_sample") |>
+  mutate(Disease = case_when(Diagnose == "BRC" ~ "Breast cancer", 
+                             Diagnose == "CRC" ~ "Colorectal cancer", 
+                             Diagnose == "LUNG" ~ "Lung cancer", 
+                             Diagnose == "OVC" ~ "Ovarian cancer", 
+                             Diagnose == "PRC"~ "Prostate cancer"))  
+# Prepare data
+ucan_p2_wide <- 
+  ucan_data |> 
+  filter(DAid %in% ucan_meta_p2$DAid) |> 
+  select(DAid, Assay, NPX) |> 
+  pivot_wider(names_from = Assay, values_from = NPX) |>
+  left_join(ucan_meta_p2 |> 
+              select(DAid, Disease), by = "DAid")
+
+# Split data
+ucan_p2_split <- 
+  generate_split(data = ucan_p2_wide, 
+               proportion = 0.7,
+               seed = 213,
+               variable_stratify = "Disease")
+
+# Run for all cancers
+ucan_p1_ml <- 
+  map(all_cancers, ~ do_lasso_binary(disease = .x,
+                                     metadata = ucan_meta,
+                                     split_train = ucan_p1_split$data_train, 
+                                     split_test = ucan_p1_split$data_test))
+
+ovc_p2 <- do_lasso_binary(disease = "Ovarian cancer",
+                          metadata = ucan_meta_p2,
+                          split_train = ucan_p2_split$data_train, 
+                          split_test = ucan_p2_split$data_test) 
+
+ovc_p2$auc
+ovc_p2$important_proteins |> filter(Importance > 0)
 
 ```
 
