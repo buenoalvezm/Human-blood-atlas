@@ -10,6 +10,7 @@ library(eulerr)
 library(ggplotify)
 library(pheatmap)
 library(plotly)
+library(ggridges)
 
 do_pca <- function(data,
                    meta = NULL,
@@ -793,3 +794,33 @@ plot_boxplot <- function(proteins,
   
   return(boxplot)
 }
+
+plot_donut <- 
+  function(proteins) {
+    
+    donut_data <- 
+      tibble(Assay = proteins) |> 
+      left_join(secretome_hpa |> 
+                  select(Gene, `Secretome location`), by = c("Assay" = "Gene")) |> 
+      mutate(`Secretome location` = ifelse(is.na(`Secretome location`), "Not secreted", `Secretome location`)) |> 
+      count(`Secretome location`) |> 
+      mutate(percentage = n / sum(n) * 100,  # Calculate percentage for each class
+             label = paste0(`Secretome location`, " (", n, ")"))  # Create labels
+    
+    
+    # Donut plot
+    donut_data |> 
+      ggplot(aes(x = 2, y = n, fill = `Secretome location`)) + 
+      geom_bar(stat = "identity", width = 1, color = "white") +  
+      coord_polar(theta = "y") +  
+      xlim(1, 2.5) +  
+      theme_void() +
+      theme(legend.position = "none") +
+      scale_fill_manual(values = c(pal_secreted, "Not secreted" = "grey80")) +
+      geom_text(aes(label = ifelse(n > 25, n, "")),  # Display numbers only if n > 25
+                position = position_stack(vjust = 0.5),  # Center labels within segments
+                color = "white", size = 4)
+    
+    
+  }
+
