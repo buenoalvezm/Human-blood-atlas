@@ -13,6 +13,8 @@ pal_anova_wellness <-  c("age" = "#75C8AE",
                          "subject" = "#ABC8F6",
                          "month_of_sampling" = "#686594")    
 
+pal_sex <- c("F" = "#8B759E", "M" = "#A3D0B4")
+
 pal_bamse <- 
   c("4" = "#8285BD",
     "8" = "#A993BE",
