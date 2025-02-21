@@ -41,9 +41,7 @@ bamse_data <-
 ## Cohort overview
 
 ```{r}
-library(ggridges)
-
-p1 <- 
+plot_density <- 
   bamse_meta |> 
   ggplot(aes(x = Age, y = Diagnose,  color = Diagnose, fill = Diagnose, group = Diagnose)) +
   geom_density_ridges(
@@ -58,8 +56,6 @@ p1 <-
     scale_x_continuous(breaks = seq(0, max(bamse_meta$Age), by = 2)) +  # Adjust the range and step size
   ylab("Visit") +
   theme_hpa()
-
-
 ```
 
 ## PCA
@@ -70,7 +66,7 @@ pca_bamse <-
        wide = F,
        plots = F)
 
-#p2 <- 
+plot_pca <- 
   pca_bamse$pca_res |> 
   left_join(bamse_meta, by = c("Sample" = "DAid")) |> 
   ggplot(aes(PC1, PC2, color = Diagnose, fill = Diagnose)) +
@@ -79,122 +75,48 @@ pca_bamse <-
   scale_color_manual(values = pal_bamse) +
   scale_fill_manual(values = pal_bamse) +
   theme_hpa()
-  
-  
-# Colored by sex
-pca_bamse$pca_res |> 
-  left_join(bamse_meta, by = c("Sample" = "DAid")) |> 
-  ggplot(aes(PC1, PC2, color = Sex, fill = Sex)) +
-  geom_point(alpha = 0.7) +
- # stat_ellipse(geom = "polygon", alpha = 0.3, color = NA) + 
- # scale_color_manual(values = pal_bamse) +
-  #scale_fill_manual(values = pal_bamse) +
-  theme_hpa()
-  
-ggsave(savepath("sex_pca.pdf"), h = 5, w = 5)
 
-p1 + p2
+plot_density + plot_pca
 
-ggsave(savepath("distribution_pca.pdf"), h = 4, w = 10)
-```
-
-## PCA per age colored by sex 
-
-```{r}
-# High detectability proteins
-proteins_high_detectability <- readRDS("data/processed/proteins_high_detectability.rds")
-
-# PCA visit 4
-bamse_data_4 <- 
-  bamse_data |> 
-  filter(Assay %in% proteins_high_detectability) |> 
-  left_join(bamse_meta) |> 
-  filter(Diagnose == "4")
-
-pca_bamse_4 <- 
-  do_pca(data = bamse_data_4,
-       wide = F,
-       plots = F)
-
-# PCA visit 8
-bamse_data_8 <- 
-  bamse_data |> 
-  filter(Assay %in% proteins_high_detectability) |> 
-  left_join(bamse_meta) |> 
-  filter(Diagnose == "8")
-
-pca_bamse_8 <- 
-  do_pca(data = bamse_data_8,
-       wide = F,
-       plots = F)
-
-# PCA visit 16
-bamse_data_16 <- 
-  bamse_data |> 
-  filter(Assay %in% proteins_high_detectability) |> 
-  left_join(bamse_meta) |> 
-  filter(Diagnose == "16")
-
-pca_bamse_16 <- 
-  do_pca(data = bamse_data_16,
-       wide = F,
-       plots = F)
-
-# PCA visit 22
-bamse_data_24 <- 
-  bamse_data |> 
-  filter(Assay %in% proteins_high_detectability) |> 
-  left_join(bamse_meta) |> 
-  filter(Diagnose == "24")
-
-pca_bamse_24 <- 
-  do_pca(data = bamse_data_24,
-       wide = F,
-       plots = F)
-
-pca_bamse_4$pca_res |> 
-  mutate(Visit = "Age_4") |> 
-  bind_rows(pca_bamse_8$pca_res |> 
-  mutate(Visit = "Age_8")) |> 
-  bind_rows(pca_bamse_16$pca_res |> 
-  mutate(Visit = "Age_16")) |> 
-  bind_rows(pca_bamse_24$pca_res |> 
-  mutate(Visit = "Age_24")) |> 
-  mutate(Visit = factor(Visit, levels = c("Age_4", "Age_8", "Age_16", "Age_24"))) |> 
-  left_join(bamse_meta, by = c("Sample" = "DAid")) |> 
-  ggplot(aes(PC1, PC2, color = Sex, fill = Sex)) +
-  geom_point(alpha = 0.7) +
-  facet_wrap(~Visit, nrow = 1) +
-  stat_ellipse(geom = "polygon", alpha = 0.3, color = NA) + 
-  #scale_color_manual(values = pal_bamse) +
-  #scale_fill_manual(values = pal_bamse) +
-  theme_hpa()
-
-ggsave(savepath("pca_across_age_proteins_high_detectability.pdf"), h = 4, w = 10)
-
+ggsave(savepath_results("Publication-figures", "Fig2a_fig2b.pdf"), h = 4, w = 10)
 ```
 
 
-## Mixed effect model
+
+# Mixed effect model
 
 ```{r}
+data_mm <- 
+  bamse_data |> 
+  select(DAid, Assay, NPX) %>%
+  left_join(bamse_meta, by = "DAid") |> 
+  mutate(sex = as.factor(Sex),
+         age = as.factor(Age),
+         visit = as.factor(Diagnose),
+         subject = as.factor(subject))
+
 mixed_model_all_proteins <- 
-  map_df(unique(data_anova$Assay), function(protein) {
+  map_df(unique(data_mm$Assay), function(protein) {
     
-    do_mixed_effect_model(df = data_anova, 
+    do_mixed_effect_model(df = data_mm, 
+                          type = "fixed_effects",
                           protein = protein)
     
   })
 
 
-saveRDS(mixed_model_all_proteins, "data/processed/MM_BAMSE.rds")
-mixed_model_all_proteins <- readRDS("data/processed/MM_BAMSE.rds")
+#saveRDS(mixed_model_all_proteins, "data/processed/MM_BAMSE.rds")
+#mixed_model_all_proteins <- readRDS("data/processed/MM_BAMSE.rds")
 
 mixed_model_all_proteins |> 
   filter(term %in% c("age", "sexM")) |> 
   arrange(p.value) 
+```
 
-# Age
+
+## Age
+
+```{r}
 dat_age <- 
   mixed_model_all_proteins |> 
   filter(term == "age") |> 
@@ -209,18 +131,43 @@ labels_age <-
 
 volcano_plot_age <- 
   dat_age |> 
-  ggplot(aes(x = estimate, y = -log10(p.value), color = sig, label = Protein)) +
+  ggplot(aes(x = estimate, y = -log10(p.value), color = sig, label = Assay)) +
   geom_point(size = 1, alpha = 0.4, show.legend = F) + 
   geom_text_repel(data = labels_age, size = 2, show.legend = F) +
   geom_hline(yintercept = -log10(0.05), linetype = 'dashed', color = "darkgrey") +
-  #geom_vline(xintercept = -1, linetype = 'dashed', color = "darkgrey") +
- # geom_vline(xintercept = 1, linetype = 'dashed', color = "darkgrey") +
   scale_color_manual(values = pal_de) +
   theme_hpa() +   
   theme(axis.text = element_text(size = 8),
         legend.position = "top") 
 
-# Sex
+top_age_proteins <- 
+  dat_age |> 
+  group_by(sig) |>
+  top_n(n = 3, wt = -log10(p.value)) |> 
+  filter(sig != "not significant") 
+
+ <- 
+  bamse_data |> 
+  filter(Assay %in% top_age_proteins$Assay) |>
+  left_join(bamse_meta |> 
+              select(DAid, subject, Diagnose)) |> 
+  mutate(Assay = factor(Assay, levels = top_age_proteins$Assay)) |>
+  ggplot(aes(Diagnose, NPX, color = Diagnose)) +
+  geom_line(aes(group = subject), alpha = 0.3, color = "grey80") +
+  geom_quasirandom(alpha = 0.7, show.legend = F) +
+  geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
+  scale_color_manual(values = pal_bamse) +
+  facet_wrap(~Assay, scales = "free_y", nrow = 2) +
+  theme_hpa(axis_x = F) 
+  
+volcano_plot_age + boxplots_age
+
+ggsave(savepath_results("Publication-figures", "Fig2c_Fig2d.pdf"), h = 5, w = 12)
+```
+
+## Sex
+
+```{r}
 dat_sex <- 
   mixed_model_all_proteins |> 
   filter(term == "sexM") |> 
@@ -234,224 +181,57 @@ labels_sex <-
 
 volcano_plot_sex <- 
   dat_sex |> 
-  ggplot(aes(x = estimate, y = -log10(p.value), color = sig, label = Protein)) +
+  ggplot(aes(x = estimate, y = -log10(p.value), color = sig, label = Assay)) +
   geom_point(size = 1, alpha = 0.4, show.legend = F) + 
   geom_text_repel(data = labels_sex, size = 2, show.legend = F) +
   geom_hline(yintercept = -log10(0.05), linetype = 'dashed', color = "darkgrey") +
-  #geom_vline(xintercept = -1, linetype = 'dashed', color = "darkgrey") +
- # geom_vline(xintercept = 1, linetype = 'dashed', color = "darkgrey") +
   scale_color_manual(values = pal_de) +
   theme_hpa() +   
   theme(axis.text = element_text(size = 8),
         legend.position = "top") 
 
-volcano_plot_sex + volcano_plot_age
-ggsave(savepath("volcanos_bamse_MM.pdf"), h = 4, w = 10)
-
-volcano_plot_age 
-ggsave(savepath("volcano_age_bamse_MM.pdf"), h = 3, w = 4)
-
-p1 + p2 + volcano_plot_age
-
-ggsave(savepath("distribution_pca_volcano.pdf"), h = 3.5, w = 12)
-
-volcano_plot_sex
-
-ggsave(savepath("volcano_sex.png"), h = 4, w = 4)
-
-top_age_proteins <- 
-  dat_age |> 
-  group_by(sig) |>
-  top_n(n = 4, wt = -log10(p.value)) |> 
-  filter(sig != "not significant") 
-
-bamse_data |> 
-  filter(Assay %in% top_age_proteins$Protein) |>
-  left_join(bamse_meta |> 
-              select(DAid, subject, Diagnose)) |> 
-  mutate(Assay = factor(Assay, levels = top_age_proteins$Protein)) |>
-  ggplot(aes(Diagnose, NPX, color = Diagnose)) +
-  geom_line(aes(group = subject), alpha = 0.3, color = "grey80") +
-  geom_quasirandom(alpha = 0.7, show.legend = F) +
-  geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
-  scale_color_manual(values = pal_bamse) +
-  facet_wrap(~Assay, scales = "free_y", nrow = 1) +
-  theme_hpa(axis_x = F) 
-  
-ggsave(savepath("top_age_proteins_bamse.pdf"), h = 2.5, w = 12)
-
-
 top_sex_proteins <- 
   dat_sex |> 
   group_by(sig) |>
-  top_n(n = 4, wt = -log10(p.value)) |> 
+  top_n(n = 3, wt = -log10(p.value)) |> 
   filter(sig != "not significant") 
 
-bamse_data |> 
-  filter(Assay %in% top_sex_proteins$Protein) |>
+boxplots_sex <- 
+  bamse_data |> 
+  filter(Assay %in% top_sex_proteins$Assay) |>
   left_join(bamse_meta |> 
               select(DAid, subject, Sex)) |> 
-  mutate(Assay = factor(Assay, levels = top_sex_proteins$Protein)) |>
+  mutate(Assay = factor(Assay, levels = top_sex_proteins$Assay)) |>
   ggplot(aes(Sex, NPX, color = Sex)) +
   geom_line(aes(group = subject), alpha = 0.3, color = "grey80") +
   geom_quasirandom(alpha = 0.7, show.legend = F) +
   geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
   #scale_color_manual(values = pal_bamse) +
-  facet_wrap(~Assay, scales = "free_y", nrow = 1) +
+  facet_wrap(~Assay, scales = "free_y", nrow = 2) +
   theme_hpa(axis_x = F) 
 
-ggsave(savepath("top_sex_proteins_bamse.png"), h = 2.5, w = 12)
-
-  
-bamse_data |> 
-  filter(Assay %in% top_sex_proteins$Protein) |>
+boxplots_sex <- 
+  bamse_data |> 
+  filter(Assay %in% top_sex_proteins$Assay) |>
   left_join(bamse_meta |> 
               select(DAid, subject, Diagnose, Sex)) |> 
-  mutate(Assay = factor(Assay, levels = top_sex_proteins$Protein)) |>
+  mutate(Assay = factor(Assay, levels = top_sex_proteins$Assay)) |>
   ggplot(aes(Diagnose, NPX, color = Sex)) +
   geom_line(aes(group = subject), alpha = 0.3, color = "grey80") +
   geom_quasirandom(alpha = 0.7) +
-  #geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
- # scale_color_manual(values = pal_bamse) +
- # facet_wrap(Sex~Assay, scales = "free_y", nrow = 2) +
-  facet_wrap(~Assay, scales = "free_y", nrow = 1) +
+  scale_color_manual(values = pal_sex) +
+  facet_wrap(~Assay, scales = "free_y", nrow = 2) +
   theme_hpa(axis_x = F) 
 
-ggsave(savepath("top_sex_long_proteins_bamse.pdf"), h = 2.5, w = 12)
-ggsave(savepath("top_sex_long_proteins_bamse_2.png"), h = 2.5, w = 12)
-```
+volcano_plot_sex + boxplots_sex
 
-## ANOVA
-
-```{r}
-data_anova <- 
-  bamse_data |> 
-  select(DAid, Assay, NPX) %>%
-  left_join(bamse_meta, by = "DAid") |> 
-  mutate(sex = as.factor(Sex),
-         age = as.factor(Age),
-         visit = as.factor(Diagnose),
-         subject = as.factor(subject))
-
-# Test the function on one protein
-anova_all_proteins <- 
-  map_df(unique(data_anova$Assay), function(protein) {
-    
-    do_anova(df = data_anova, 
-             protein = protein)
-    
-  })
+ggsave(savepath_results("Publication-figures", "Fig2e_Fig2f.pdf"), h = 5, w = 12)
 ```
 
 
-### Visualize
+# Differential expression between BAMSE ages
 
 ```{r}
-
-dat <- 
-  anova_all_proteins |> 
-  group_by(Protein) |> 
-  filter(term != "Residuals") |> 
-  mutate(Total_variance = sum(Eta2_perc)) |> 
-  arrange(-Total_variance) 
-
-top_variance <- 
-  dat |> 
-  filter(Total_variance > 40) |> 
-  distinct(Protein) |> 
-  pull()
-
-dat |> 
-  filter(Protein %in% top_variance) |>
-  ggplot(aes(x = reorder(Protein, -Total_variance), y = Eta2_perc, fill = term)) +
-  geom_col() +
-  #  geom_vline(xintercept = 40, color = "grey", linetype = "dashed", size = 0.5) +
-
-  theme_hpa(angled = T) +
-  scale_fill_manual(values = pal_anova_wellness) +
-  ylab("% of variance explained") +
-  xlab("") 
-
-
-ggsave(savepath("anova_DA.pdf"), h = 4, w = 13)
-ggsave(savepath("anova_DA.png"), h = 4, w = 13)
-
-# Top proteins
-dat |> 
-  filter(Protein %in% top_variance) |>
-  ggplot(aes(x = reorder(Protein, -Total_variance), y = Eta2_perc, fill = term)) +
-  geom_col(show.legend = F) +
-  theme_hpa(angled = T) +
-  scale_fill_manual(values = pal_anova) +
-  ylab("% of variance explained") +
-  xlab("") 
-
-ggsave(savepath("anova_DA_top.pdf"), h = 5, w = 15)
-ggsave(savepath("anova_DA_top.png"), h = 5, w = 15)
-
-
-#Top protein for age, sex, BMI
-p1 <- 
-  resource_data |> 
-  filter(Assay == "CGA") |> 
-  left_join(resource_meta |> 
-              select(DAid, Sex, Class), by = "DAid") |> 
-  filter(!is.na(Sex)) |> 
-  mutate(Sex = case_when(Sex == "M" ~ "Male",
-                         Sex == "F" ~ "Female")) |> 
-  ggplot(aes(Sex, NPX, color = Class, fill = Class)) +
-  geom_quasirandom(alpha = 0.6, show.legend = F) +
-  geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
- # geom_text(aes(label = "adj p-value = 1.16e-297")) +
-  scale_color_manual(values = pal_class) +
-  scale_fill_manual(values = pal_class) +
-  theme_hpa() +
-  ggtitle("CGA") 
-
-p2 <- 
-  resource_data |> 
-  filter(Assay == "EDA2R") |> 
-  left_join(resource_meta |> 
-              select(DAid, Age, Class), by = "DAid") |> 
-  filter(!is.na(Age)) |> 
-  ggplot(aes(Age, NPX, color = Class)) +
-  geom_point(show.legend = F) +
-  geom_smooth(color = "grey20") +
-  scale_color_manual(values = pal_class) +
-  theme_hpa() +
-  ggtitle("EDA2R")
-  
-p3 <- 
-  resource_data |> 
-  filter(Assay == "LEP") |> 
-  left_join(resource_meta |> 
-              select(DAid, BMI, Class), by = "DAid") |> 
-  filter(!is.na(BMI),
-         BMI != 0) |> 
-  ggplot(aes(BMI, NPX, color = Class)) +
-  geom_point(show.legend = F) +
-  geom_smooth(color = "grey20") +
-  scale_color_manual(values = pal_class) +
-  theme_hpa() +
-  ggtitle("LEP")
-
-p1 / p2 / p3
-
-ggsave(savepath("age_sex_bmi_prots.pdf"), h = 13, w = 3.5)
-
-
-```
-
-
-# Differential expression between them
-
-```{r}
-
-# Barplot, volcano plot, top up, top down (highlight the two ages that we are comparing)
-
-age_case <- "4"
-age_control <- "8" 
-  
 combinations <- 
    expand_grid(Age_case = c("4", "8", "16", "24"),
             Age_control = c("4", "8", "16", "24")) |> 
@@ -461,6 +241,7 @@ combined_plots <-
   combinations |> 
   rowwise() |> 
   mutate(
+    
     # Perform analysis for each combination and create plots
     plot = list({
       
@@ -482,7 +263,6 @@ combined_plots <-
         count(sig) |> 
         ggplot(aes(x = sig, y = n, fill = sig)) +
         geom_col(show.legend = F) +
-       # geom_text(aes(label = n), vjust = -0.5) +
         scale_fill_manual(values = pal_de) +
         theme_hpa(angled = T) +
        coord_flip() +
@@ -537,26 +317,22 @@ combined_plots <-
         plot_layout(widths = c(0.5, 2), heights = c(2, 1, 1)) +
         plot_annotation(title = paste0("Differential expression: ", case, " vs ", control))
       
-      #ggsave(savepath("de_BAMSE.pdf"), height = 8, width = 8)
-      
     })
   )
 
-pdf(savepath("de_BAMSE.pdf"), width = 9, height = 8)  
-
-combined_plots %>%
-  pull(plot) %>%
-  walk(print) 
-
-dev.off()
+# pdf(savepath("de_BAMSE.pdf"), width = 9, height = 8)  
+# 
+# combined_plots %>%
+#   pull(plot) %>%
+#   walk(print) 
+# 
+# dev.off()
 
 combined_plots |> 
   filter(Age_case == "8", Age_control == "16") |> 
   pull(plot)
 
-ggsave(savepath("de_BAMSE_8_16.pdf"), width = 9, height = 8)  
-
-
+ggsave(savepath_results("Publication-figures", "Supplementary_BAMSE.pdf"), width = 9, height = 8)  
 ```
 
 
@@ -606,12 +382,11 @@ ggsave(savepath("de_BAMSE_8_16.pdf"), width = 9, height = 8)
 ```
 
 
-# DE - BAMSE 22 vs Wellness
+# Differential expression between BAMSE 22 vs Wellness
 
 ```{r}
 wellness_v1_meta <- read_tsv("data/processed/meta_visit_1.tsv")
 wellness_v1_data <- read_tsv("data/processed/data_visit_1.tsv")
-
 
 combo_data <- 
   bamse_data |> 
@@ -658,7 +433,7 @@ top_down <-
   head(8) |> 
   pull(Assay)
 
-#p_up <- 
+p_up <- 
   combo_data |> 
   left_join(combo_meta) |> 
   filter(Assay %in% top_up) |>
@@ -673,7 +448,7 @@ top_down <-
   xlab("") +
   ggtitle("Top upregulated proteins") 
   
-#p_down <- 
+p_down <- 
   combo_data |> 
   left_join(combo_meta) |> 
   filter(Assay %in% top_down) |>
@@ -731,34 +506,3 @@ p_up_disease/ p_down_disease
 
 ggsave(savepath("de_BAMSE_Wellness_pandisease_boxplots.pdf"), width = 10, height = 7)
 ```
-
-# Plot 1
-
-```{r}
-bamse_data |> 
-        filter(Assay  == "FSHB") |> 
-        left_join(bamse_meta) |> 
-        ggplot(aes(Diagnose, NPX, color = Diagnose)) +      geom_line(aes(group = subject), alpha = 0.3, color = "grey80") +
-        geom_quasirandom(alpha = 0.7) +
-        geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
-        scale_color_manual(values = pal_bamse) +
-        facet_wrap(~Assay, scales = "free_y", nrow = 1) +
-        theme_hpa(axis_x = F) 
-
-
- combo_data |> 
-  left_join(combo_meta) |> 
-  filter(Assay  == "FSHB") |> 
-   mutate(Group = paste(Diagnose, Sex, sep ="_")) |> 
-  ggplot(aes(Group, NPX, color = Sex, fill = Sex)) +
-  geom_quasirandom() +
-  geom_boxplot(alpha = 0.5, color = "grey30", outlier.colour = NA) +
-  #scale_color_manual(values = c("#BBDFD4", "#E8CF36")) +
-  #scale_fill_manual(values = c("#BBDFD4", "#E8CF36")) +
-  facet_wrap(~Assay, nrow = 1, scales = "free") +
-  theme_hpa(angled = T) +
-  xlab("") 
- 
- ggsave(savepath("FSHB_boxplot.pdf"), width = 6, height = 6)
-```
-
