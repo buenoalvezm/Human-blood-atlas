@@ -824,3 +824,42 @@ plot_donut <-
     
   }
 
+boxplot_ukb <- function(cancer, protein) {
+  meta <- 
+    ukb_dat |> 
+    left_join(ukb_meta)  |> 
+    mutate(time_to_diagnosis = Age_sample_collect - Cancer_age_diagnosis,
+           Cancer_name = ifelse(Cancer_name %in% c("Colon_cancer", "Rectum_cancer"), "Colorectal_cancer", Cancer_name),
+           Group = case_when(time_to_diagnosis <= -7 ~ "> 7 years before",
+                             time_to_diagnosis > -7 & time_to_diagnosis <= -5 ~ "5-7 years before",
+                             time_to_diagnosis > -5 & time_to_diagnosis <= -3 ~ "3-5 years before",
+                             time_to_diagnosis > -3 & time_to_diagnosis <= -1 ~ "1-3 years before",
+                             time_to_diagnosis > -1 & time_to_diagnosis <= 1 ~ "1 year before/after",
+                             time_to_diagnosis > 1 & time_to_diagnosis <= 3 ~ "1-3 years after",
+                             time_to_diagnosis > 3 ~ "> 3 years after"),
+           Group = factor(Group, levels = names(pal_ukb_2[-1]))) 
+  
+  
+  plot_dat <- 
+    ukb_data |>
+    left_join(meta) |> 
+    filter(Assay == protein,
+           Cancer_name == cancer) 
+  
+  plot_dat |> 
+    ggplot(aes(Group, NPX, color = Group, fill = Group)) +
+    geom_boxplot(show.legend = F) +
+    #geom_violin(alpha = 0.8) +
+    stat_summary(fun = mean, geom = "point", shape = 95, size = 8, color = "white", show.legend = F) +
+    #facet_wrap(Cancer_name~Assay, scales = "free_y", nrow = 1) +
+    scale_color_manual(values = pal_ukb_2) +
+    scale_fill_manual(values = pal_ukb_2) +
+    theme_hpa(axis_x = F) +
+    ggtitle(paste0(protein, " - ", cancer))
+  # theme(axis.ticks = element_blank(),
+  #      axis.text = element_blank()) #+
+  #  ylab("Protein expression") +
+  # xlab("Time to diagnosis") 
+  
+}
+
