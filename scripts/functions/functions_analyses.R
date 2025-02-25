@@ -227,6 +227,90 @@ do_limma <-
 
 
 
+# Function to run differential expression using limma
+do_limma_disease <-
+  function(data_wide, 
+           metadata,
+           disease,
+           controls,
+           correct = T,
+           cutoff = 0) {
+    
+    # Select current disease
+    dat <-
+      data_wide %>% 
+      inner_join(metadata %>% 
+                   select(DAid, Sex, Age, BMI, Disease), by = "DAid") %>% 
+      rename(Group = Disease) %>% 
+      mutate(Group = ifelse(Group == disease, "1_Case", "0_Control")) 
+    
+    
+    if(correct == T) {
+      dat <- 
+        dat |> 
+        filter(!is.na(Sex),
+               !is.na(Age))
+    } else {
+      
+      dat <- dat
+    }
+    
+    # Design a model
+    if(correct == T) {
+      
+      if(disease %in% c(male_diseases, female_diseases)) {
+        design <- model.matrix(~0 + as.factor(dat$Group) + dat$Age) 
+        colnames(design) <- c("control", "case", "Age")
+      } else if(disease %in% pediatric_diseases & controls == "Healthy") {
+        design <- model.matrix(~0 + as.factor(dat$Group) + as.factor(dat$Sex)) 
+        colnames(design) <- c("control", "case",  "Sex") 
+      } else {
+        design <- model.matrix(~0 + as.factor(dat$Group) + as.factor(dat$Sex) + dat$Age) 
+        colnames(design) <- c("control", "case",  "Sex", "Age") 
+      }
+      
+    } else {
+      design <- model.matrix(~0 + as.factor(dat$Group))
+      colnames(design) <- c("control", "case")
+    }
+    
+    # Make contrast
+    contrast <- makeContrasts(Diff = case - control, levels = design)
+    
+    # Fit linear model to each protein assay
+    dat_fit <- 
+      dat %>% 
+      select(-Sex, -Age, -BMI, -Group)  %>% 
+      column_to_rownames("DAid") %>% 
+      t()
+    
+    fit <- lmFit(dat_fit, design = design, maxit = 100000) #method = "robust", 
+    
+    # Apply contrast
+    contrast_fit <- contrasts.fit(fit, contrast)
+    
+    # Apply empirical Bayes smoothing to the SE
+    ebays_fit <- eBayes(contrast_fit, robust = T)
+    
+    # Extract DE results
+    DE_results <-
+      topTable(ebays_fit,
+               n = nrow(ebays_fit$p.value), 
+               adjust.method = "fdr", 
+               confint = TRUE)
+    
+    DE_res <- 
+      DE_results %>% 
+      as_tibble(rownames = "Assay") %>% 
+      mutate(Disease = disease,
+             sig = case_when(adj.P.Val < 0.05 & logFC < -cutoff ~ "significant down",
+                             adj.P.Val < 0.05 & logFC > cutoff ~ "significant up", 
+                             T ~ "not significant"),
+             Control = controls)
+    
+    return(DE_res)
+  }
+
 do_limma_continuous <-
   function(data, 
            metadata,
@@ -539,4 +623,90 @@ do_lasso_binary <-
     
     return(complete_model)
   }
+
+do_limma_continuous <- function(join_data,
+                                variable,
+                                correct = c("Sex"),
+                                correct_type = c("factor"),
+                                pval_lim = 0.05,
+                                logfc_lim = 0) {
+  nrows_before <- nrow(join_data)
+  
+  join_data <- join_data |>
+    dplyr::filter(!dplyr::if_any(dplyr::all_of(c(variable, correct)), is.na))  # Remove NAs from columns in formula
+  
+  nrows_after <- nrow(join_data)
+  if (nrows_before != nrows_after){
+    warning(paste0(nrows_before - nrows_after,
+                   " rows were removed because they contain NAs in ",
+                   variable,
+                   " or ",
+                   paste(correct, collapse = ", "),
+                   "!"))
+  }
+  
+  # Design a model
+  # formula <- paste("~0 +" , variable)
+  
+  # if (!is.null(correct)) {
+  #   for (i in 1:length(correct)) {
+  #     if (correct_type[i] == "factor") {
+  #       cofactor = paste("as.factor(", correct[i], ")")
+  #     } else {
+  #       cofactor = correct[i]
+  #     }
+  #     formula <- paste(formula, "+", cofactor)
+  #   }
+  # }
+  #design <- stats::model.matrix(stats::as.formula(formula), data = join_data)
+  
+  # Design a model
+  formula <- paste("~" , variable)  # Include intercept
+  
+  if (!is.null(correct)) {
+    for (i in 1:length(correct)) {
+      if (correct_type[i] == "factor") {
+        cofactor = paste("as.factor(", correct[i], ")")
+      } else {
+        cofactor = correct[i]
+      }
+      formula <- paste(formula, "+", cofactor)
+    }
+  }
+  design <- stats::model.matrix(stats::as.formula(formula), data = join_data)
+  
+  
+  # Fit linear model to each protein assay
+  data_fit <- 
+    join_data |>
+    dplyr::select(-dplyr::any_of(c(variable, correct))) |>
+    tibble::column_to_rownames("DAid") |>
+    t()
+  
+  fit <- limma::lmFit(data_fit, design = design, method = "robust", maxit = 10000)
+  
+  
+  # Apply empirical Bayes smoothing to the SE
+  ebays_fit <- limma::eBayes(fit)
+  
+  # Extract DE results
+  de_results <- limma::topTable(ebays_fit,
+                                coef = variable,  # Extract results for Age specifically
+                                n = nrow(ebays_fit$p.value),
+                                adjust.method = "fdr",
+                                confint = TRUE)
+  
+  de_res <- de_results |>
+    tibble::as_tibble(rownames = "Assay") |>
+    dplyr::rename(logFC = colnames(de_results)[1]) |>
+    dplyr::mutate(sig = dplyr::case_when(
+      adj.P.Val < pval_lim & logFC < -logfc_lim ~ "significant down",
+      adj.P.Val < pval_lim & logFC > logfc_lim ~ "significant up",
+      T ~ "not significant")
+    ) |>
+    dplyr::arrange(adj.P.Val)
+  
+  return(de_res)
+}
+
 
