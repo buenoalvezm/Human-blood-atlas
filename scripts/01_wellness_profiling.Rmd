@@ -107,6 +107,40 @@ wellness_meta <-
   filter(!DAid %in% DAid_exclude_limited_visits)
 ```
 
+## UMAP
+
+```{r}
+wellness_umap <- 
+  do_umap(data = wellness_data, wide = F, impute = T, plots = F)
+
+wellness_umap |> 
+  left_join(wellness_meta |> 
+              select(DAid, subject, visit), by =c("Sample" = "DAid")) |>
+  ggplot(aes(UMAP1, UMAP2, color = subject, frame = visit)) +
+  geom_point(show.legend = F) +
+  geom_line(aes(group = subject), show.legend = F) +
+  theme_hpa()
+
+
+exclude_samples_wellness_umap <- 
+  wellness_umap |> 
+  filter(UMAP1 < -5 | UMAP1 > 5 | UMAP2 < -5) |> 
+  distinct(Sample) |> 
+  left_join(wellness_meta |> 
+              select(DAid, subject, visit), by =c("Sample" = "DAid")) 
+
+#1-3283 
+
+# Exclusion of subjects UMAP outliers
+wellness_data <-
+  wellness_data |>
+  filter(!DAid %in% exclude_samples_wellness_umap$Sample)
+
+wellness_meta <-
+  wellness_meta |>
+  filter(!DAid %in% exclude_samples_wellness_umap$Sample)
+```
+
 # LOD
 
 Analyze the number of proteins consistently detected across all visits for each individual.
@@ -127,6 +161,7 @@ lod_sample_dat_order <-
 
 lod_sample_dat|> 
   mutate(DAid = factor(DAid, levels = lod_sample_dat_order$DAid)) |>
+  filter(!DAid %in% samples_low_det$DAid) |> 
   ggplot(aes(DAid, n, fill = above_LOD)) +
   geom_col() +
   theme_hpa(axis_x = F)
@@ -135,6 +170,15 @@ ggsave(savepath("LOD_per_sample.png"), h = 5, w = 15)
 
 # Plot strange samples
 
+samples_low_det <- 
+  lod_sample_dat |> 
+  filter(above_LOD == "Yes") |> 
+  arrange(n) |> 
+  filter(n < 2000) |> 
+  left_join(wellness_meta |> 
+              select(DAid, subject, visit), by = "DAid") 
+
+  
 
 ```
 
@@ -142,6 +186,11 @@ ggsave(savepath("LOD_per_sample.png"), h = 5, w = 15)
 ## Per subject 
 
 ```{r}
+
+wellness_meta <- 
+  wellness_meta |> 
+  filter(DAid %in% wellness_data$DAid)
+
 dat <- 
   wellness_data |> 
   left_join(wellness_meta |> 
@@ -162,6 +211,12 @@ dat |>
 
 ggsave(savepath("LOD_per_sample_names.pdf"), h = 4, w = 18) #12
 
+
+number_of_visits <- 
+  wellness_meta |> 
+  group_by(subject) |> 
+  summarise(Number_of_visits = n_distinct(visit)) |> 
+  arrange(Number_of_visits)  
 
 lod_subject_dat <- 
   dat |> 
@@ -197,19 +252,61 @@ subject_order <-
   filter(class == "None") |> 
   arrange(-n)
 
-lod_subject_dat |> 
+dat |> 
+  filter(subject == "1-4270") |> 
+  arrange(-above_LOD_count)
+
+number_of_visits |> 
+  filter(subject == "1-4270")
+
+#plot_complete <- 
+  lod_subject_dat |> 
   mutate(subject = factor(subject, levels = subject_order$subject)) |> 
   ggplot(aes(subject, n, fill = class)) +
   geom_col() +
   scale_fill_manual(values = pal_detectability) +
+  theme_hpa(angled = T) + 
+  xlab("Subject") +
+  theme(axis.ticks.x = element_blank(), 
+        axis.text.x = element_blank(),
+        axis.line.x = element_blank())
+
+plot_complete
+ggsave(savepath_results("Publication-figures", "LOD_per_sample_names.pdf"), h = 4.5, w = 18) #12
+
+
+weird_subjects <- c("1-3119", "1-3217", "1-3293", "1-3790")
+
+
+plot_weird <- 
+  lod_subject_dat |> 
+  mutate(subject = factor(subject, levels = subject_order$subject)) |>
+  summarise(n = sum(n)) |> 
+  mutate(Weird = ifelse(subject %in% weird_subjects, "Yes", "No")) |> 
+  ggplot(aes(subject, n, fill = Weird)) +
+  geom_col() +
   theme_hpa() + #, axis_x = F
   xlab("Subject") +
   theme(axis.ticks.x = element_blank(), 
         axis.text.x = element_blank(),
         axis.line.x = element_blank())
 
-ggsave(savepath("LOD_per_sample_names.pdf"), h = 6, w = 18) #12
+
+plot_complete / plot_weird
+
+
+weird_subject <- 
+  wellness_meta |> filter(subject == "1-4270")
+
+wellness_data |> 
+  filter(DAid %in% weird_subject$DAid) |> 
+  group_by(DAid) |> 
+  count(above_LOD) |> 
+  distinct(DAid)
+
 ```
+
+
 
 ## Overall
 
@@ -230,11 +327,11 @@ proteins_below_50 <-
          n > 578/2)
 
 # Prepare data for Martin
-proteins_above_50 |> 
-  distinct(Assay) |> 
-  left_join(ht_data |> 
-              distinct(Assay, OlinkID, UniProt), by = "Assay") |> 
-  write_csv("wellness_detected_proteins_above50perc.csv")
+# proteins_above_50 |> 
+#   distinct(Assay) |> 
+#   left_join(ht_data |> 
+#               distinct(Assay, OlinkID, UniProt), by = "Assay") |> 
+#   write_csv("wellness_detected_proteins_above50perc.csv")
 ```
 
 ## Secretome analyses
@@ -269,18 +366,21 @@ ggsave(savepath_results("Publication-figures", "Fig1d.pdf"), h = 6, w = 6)
 Visualize stability of the proteome per sample.
 
 ```{r}
-wellness_umap <- 
+wellness_umap_new <- 
   do_umap(data = wellness_data, wide = F, impute = T, plots = F)
 
-wellness_umap |> 
+colors <- colorRampPalette(brewer.pal(12, "Paired"))(94)
+
+wellness_umap_new |> 
   left_join(wellness_meta |> 
               select(DAid, subject, visit), by =c("Sample" = "DAid")) |>
   ggplot(aes(UMAP1, UMAP2, color = subject, frame = visit)) +
   geom_point(show.legend = F) +
-  geom_line(aes(group = subject), show.legend = F) +
+  scale_color_manual(values = colors) +
+  #geom_line(aes(group = subject), show.legend = F) +
   theme_hpa()
 
-ggsave(savepath("wellness_umap.pdf"), h = 6, w = 6)
+ggsave(savepath_results("Publication-figures", "Fig1f.pdf"), h = 6, w = 6)
 ```
 
 ## Interactive visualization
@@ -348,6 +448,7 @@ variance_explained <-
 ```{r}
 order <- 
   fixed_effects |> 
+  #filter(Component == "Fixed Effects") |> 
   filter(Component == "Random Effects (Subject)") |> 
   arrange(-Proportion)
 
@@ -358,8 +459,9 @@ variance_explained |>
   ggplot(aes(Assay, Proportion, fill = Component)) +
   geom_col(position = "stack") +
   scale_fill_manual(values = c("#E8A29A", "#ABC8F6")) +
-  theme_hpa(axis_x = F)
-ggsave(savepath("MM-variance-explained.pdf"), h = 4, w = 18)
+  theme_hpa(axis_x = F) 
+
+ggsave(savepath_results("Publication-figures", "MM-variance-explained.pdf"), h = 4, w = 18)
 ```
 
 ### Example age
