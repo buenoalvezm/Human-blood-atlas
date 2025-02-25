@@ -41,6 +41,12 @@ olink_targets <-  import_df("data/overlap_olink_platforms.csv")
 
 # UKB
 
+## Load data exported from UKB-RAP
+
+```{r}
+
+```
+
 ## Time to diagnosis
 
 ```{r}
@@ -76,13 +82,16 @@ ukb_dat <-
          Group = factor(Group, levels = names(pal_ukb_2[-1]))) |> 
   filter(!time_to_diagnosis > 20) 
 
-ukb_cancers <- c("Lung_cancer",
+ukb_cancers <- c(
                  "Colorectal_cancer",
-                 "Pancreas_cancer",
-                 "Prostate_cancer",
-                 "Ovary_cancer")
+                 "Lung_cancer",
+                 "Ovary_cancer",
+                 #"Pancreas_cancer",
+                 "Prostate_cancer"
+                 )
 
 ukb_dat |> 
+  filter(Cancer_name %in% ukb_cancers) |> 
   mutate(Cancer_name = factor(Cancer_name, levels = ukb_cancers)) |> 
   ggplot(aes(time_to_diagnosis, fill = Group)) +
   geom_histogram() +
@@ -94,7 +103,7 @@ ukb_dat |>
   xlab("Time to diagnosis")
   
 
-ggsave(savepath("age_ukb.pdf"), h = 4, w = 16)
+ggsave(savepath_results("Publication-figures","age_ukb.pdf"), h = 4.5, w = 16)
 ```
 ## Examples
 
@@ -175,73 +184,107 @@ ggsave(savepath("ukb_examples_proteins.pdf"), h = 3, w = 13)
 ## Differential expression
 
 ```{r}
+
+a <- 
+  ukb_data |>
+  filter(!Assay == "HLA") |> 
+  inner_join(ukb_dat |> 
+  filter(Cancer_name == cancer) |> 
+  select(eid, time_to_diagnosis)) |> 
+    mutate(eid = as.character(eid))
+
+somehow_dupps <- 
+  a |> 
+  count(eid) |> 
+  arrange(-n) |> 
+  filter(n > 2000)
+
 cancer <- "Ovary_cancer"
 
 de_ukb <- 
-  map_df(c("Colorectal_cancer", "Lung_cancer", "Ovary_cancer"), function(cancer) {
+  map_df(c("Colorectal_cancer", "Lung_cancer", "Ovary_cancer", "Prostate_cancer"), function(cancer) {
   
   join_data <<- 
   ukb_data |>
   filter(!Assay == "HLA") |> 
   inner_join(ukb_dat |> 
   filter(Cancer_name == cancer) |> 
-  select(eid, Sex, time_to_diagnosis)) |> 
-  mutate(Sex = factor(Sex)) |> 
+  select(eid, time_to_diagnosis)) |> 
+    mutate(eid = as.character(eid)) |> 
+ #mutate(Sex = factor(Sex)) |> 
+  filter(time_to_diagnosis < 1,
+         !eid %in% somehow_dupps$eid) |> 
   pivot_wider(names_from = "Assay", values_from = "NPX") |> 
-  filter(time_to_diagnosis < 1) 
+    rename(DAid = eid)
 
-do_limma_continuous(join_data,
-                    "time_to_diagnosis",
+do_limma_continuous(join_data = join_data,
+                    variable = "time_to_diagnosis",
                     correct = c(),
                    correct_type = c(),
                     pval_lim = 0.05,
-                    logfc_lim = 0.5) |> 
+                    logfc_lim = 0) |> 
   mutate(Cancer_name = cancer) 
 })
 
-de_ukb
+de_ukb |> count(Cancer_name)
+```
+
+## Volcano plots
+
+```{r}
+
+labels <- 
+  de_ukb |> 
+  group_by(Cancer_name) |> 
+  top_n(6, -adj.P.Val) |> 
+  filter(sig != " not significant")
+
+de_ukb |> 
+  ggplot(aes(x = logFC, y = -log10(adj.P.Val), color = sig, label = Assay)) +
+  geom_point(size = 1, alpha = 0.4) + 
+  geom_text_repel(data = labels, size = 2, show.legend = F) +
+  geom_hline(yintercept = -log10(0.05), linetype = 'dashed', color = "darkgrey") +
+ # geom_vline(xintercept = -cutoff, linetype = 'dashed', color = "darkgrey") +
+#  geom_vline(xintercept = cutoff, linetype = 'dashed', color = "darkgrey") +
+  scale_color_manual(values = pal_de) +
+  facet_wrap(~Cancer_name, scales = "free", nrow = 1) +
+  theme_hpa() +   
+  theme(axis.text = element_text(size = 8),
+        legend.position = "right") +
+  xlab("Model coefficient")
+
+ggsave(savepath_results("Publication-figures", "ukb_de.pdf"), h = 3, w = 12)
 ```
 
 ## Proteins
 
 ```{r}
-protein <- "MDK"
-cancer <- "Pancreas_cancer"
 
-meta <- 
-  ukb_dat |> 
-  left_join(ukb_meta)  |> 
-  mutate(time_to_diagnosis = Age_sample_collect - Cancer_age_diagnosis,
-         Cancer_name = ifelse(Cancer_name %in% c("Colon_cancer", "Rectum_cancer"), "Colorectal_cancer", Cancer_name),
-         Group = case_when(time_to_diagnosis <= -7 ~ "> 7 years before",
-                           time_to_diagnosis > -7 & time_to_diagnosis <= -5 ~ "5-7 years before",
-                           time_to_diagnosis > -5 & time_to_diagnosis <= -3 ~ "3-5 years before",
-                           time_to_diagnosis > -3 & time_to_diagnosis <= -1 ~ "1-3 years before",
-                           time_to_diagnosis > -1 & time_to_diagnosis <= 1 ~ "1 year before/after",
-                           time_to_diagnosis > 1 & time_to_diagnosis <= 3 ~ "1-3 years after",
-                           time_to_diagnosis > 3 ~ "> 3 years after"),
-         Group = factor(Group, levels = names(pal_ukb_2[-1]))) 
+plot_nefl <- boxplot_ukb("Lung_cancer", "NEFL") 
+#plot_cxcl8 <- boxplot_ukb("Colorectal_cancer", "CXCL8") 
+plot_ceacam5 <- boxplot_ukb("Lung_cancer", "CEACAM5") 
+plot_areg <-   boxplot_ukb("Colorectal_cancer", "AREG")
+#plot_areg_lung <-   boxplot_ukb("Lung_cancer", "AREG")
+plot_crc <- boxplot_ukb("Colorectal_cancer", "C1QA")
+#plot_areg_lung <-   boxplot_ukb("Lung_cancer", "AREG")
+#boxplot_ukb("Prostate_cancer", "KLK4")
+plot_ovary <- boxplot_ukb("Ovary_cancer", "WFDC2")
+
+boxplot_ukb("Prostate_cancer", "AREG")
+
+plot_ceacam5 | plot_nefl | plot_crc | plot_areg | plot_ovary
+ggsave(savepath_results("Publication-figures", "examples_ukp.pdf"), h = 3, w = 14)
+
+protein <- 
+cancer <- 
+
+protein <- "CXCL8"
+cancer <- "Colorectal_cancer"
+
+protein <- "VTCN1"
+cancer <- "Ovary_cancer"
 
 
-plot_dat <- 
-  ukb_data |>
-  left_join(meta) |> 
-  filter(Assay == protein,
-         Cancer_name == cancer) 
-
-plot_dat |> 
-  ggplot(aes(Group, NPX, color = Group, fill = Group)) +
-  geom_boxplot(show.legend = F) +
-  #geom_violin(alpha = 0.8) +
-  stat_summary(fun = mean, geom = "point", shape = 95, size = 8, color = "white", show.legend = F) +
-  #facet_wrap(Cancer_name~Assay, scales = "free_y", nrow = 1) +
-  scale_color_manual(values = pal_ukb_2) +
-  scale_fill_manual(values = pal_ukb_2) +
-  theme_hpa()+
-  theme(axis.ticks = element_blank(),
-        axis.text = element_blank()) +
-  ylab("Protein expression") +
-  xlab("Time to diagnosis") 
 
 ggsave(savepath("TFRC.png"), h = 4, w = 5)
 ggsave(savepath("MDK_mockup.png"), h = 3, w = 4)
