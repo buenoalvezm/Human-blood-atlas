@@ -15,6 +15,17 @@ pal_anova_wellness <-  c("age" = "#75C8AE",
 
 pal_sex <- c("F" = "#8B759E", "M" = "#A3D0B4")
 
+
+pal_ukb_2 <- 
+  c("Healthy" = "grey",
+    "> 7 years before" = "#4D7654", 
+    "5-7 years before" = "#748B5F", 
+    "3-5 years before" = "#E3D6A0", 
+    "1-3 years before" = "#C78240", 
+    "1 year before/after" = "#A42F2E", 
+    "1-3 years after" = "#802020", 
+    "> 3 years after" = "#510402")
+
 pal_bamse <- 
   c("4" = "#8285BD",
     "8" = "#A993BE",
