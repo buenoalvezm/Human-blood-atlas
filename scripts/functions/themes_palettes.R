@@ -15,6 +15,28 @@ pal_anova_wellness <-  c("age" = "#75C8AE",
 
 pal_sex <- c("F" = "#8B759E", "M" = "#A3D0B4")
 
+# Palette for disease class
+getPalette3 = colorRampPalette(brewer.pal(8, "Set2"))
+pal_class<-getPalette3(8)
+names(pal_class)<-c("Psychiatric","Cardiovascular","Cancer","Autoimmune","Pediatric","Infection","Metabolic","Healthy") 
+class_order <- c("Healthy", "Cardiovascular","Metabolic","Cancer","Psychiatric","Autoimmune","Infection","Pediatric")
+
+rd_bu_continuous <- rev(colorRampPalette(brewer.pal(11, "RdBu"))(100))
+pal_cor <- rd_bu_continuous[15:85]
+
+# Levels
+female_diseases <- c("Breast cancer", "Breast ductal carcinoma in situ", "Cervical cancer", "Endometrial cancer", "Ovarian cancer")
+male_diseases <-  c("Prostate cancer", "Abdominal aortic aneurysm")
+pediatric_diseases <- c("Pediatric CNS tumor",
+                        "Pediatric bone tumor",
+                        "Pediatric retinoblastoma",
+                        "Pediatric lymphoma", 
+                        "Pediatric neuroblastoma",
+                        "Pediatric sarcoma",
+                        "Pediatric kidney tumor" , 
+                        "Pediatric diffuse astrocytic and oligodendro. tumor",
+                        "Pediatric long COVID",
+                        "Pediatric systemic inflammatory disease")
 
 pal_ukb_2 <- 
   c("Healthy" = "grey",
