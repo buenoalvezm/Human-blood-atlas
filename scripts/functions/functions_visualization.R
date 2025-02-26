@@ -111,6 +111,7 @@ do_umap <- function(data,
                     wide = T,
                     impute = T,
                     plots = F,
+                    seed = 213,
                     n_neighbors = 15) {
   if (wide) {
     data_w <- 
@@ -132,6 +133,7 @@ do_umap <- function(data,
       step_impute_knn(all_predictors()) |>
       step_umap(all_predictors(), neighbors = n_neighbors)
     
+    set.seed(seed)
     umap_prep <- prep(umap_rec)
     
   } else {
@@ -141,6 +143,7 @@ do_umap <- function(data,
       step_normalize(all_predictors()) |>
       step_umap(all_predictors(), neighbors = n_neighbors)
     
+    set.seed(seed)
     umap_prep <- prep(umap_rec)
     
   }
