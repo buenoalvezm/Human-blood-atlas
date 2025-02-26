@@ -1,0 +1,688 @@
+---
+title: "02_disease_profiling"
+output: html_document
+autor: "María Bueno Álvez"
+date: "2024-12-13"
+editor_options: 
+  chunk_output_type: console
+---
+
+# Set up
+
+```{r}
+source("scripts/functions/functions_analyses.R")
+source("scripts/functions/functions_utility.R")
+source("scripts/functions/functions_visualization.R")
+source("scripts/functions/themes_palettes.R")
+
+# Read in data
+data_disease <- read_tsv("data/data_phase1_pandisease_curated_20250226.tsv")
+meta_disease <- read_tsv("data/meta_phase1_pandisease_20250226.tsv")
+```
+
+## Disease order
+
+```{r}
+disease_class_order <-
+  meta_disease |> 
+  distinct(Class, Disease) |> 
+  mutate(Class = factor(Class, levels = class_order)) |> 
+  arrange(Class) |> 
+  pull(Disease)
+
+diseases <- 
+  meta_disease |> 
+  filter(Class != "Healthy") |> 
+  distinct(Disease) |> 
+  mutate(Disease = factor(Disease, levels = disease_class_order)) |> 
+  arrange(Disease) |> 
+  pull()
+
+classes <- 
+  meta_disease |> 
+  filter(Class != "Healthy") |> 
+  distinct(Class) |> 
+  pull()
+
+# Exclude diseases with more than 50 samples for machine learning
+exclude_diseases <- 
+  meta_disease |>
+  filter(DAid %in% data_disease$DAid) |>
+  count(Disease) |> 
+  arrange(n) |> 
+  filter(n < 48) |> 
+  pull(Disease)
+
+include_diseases <- 
+  meta_disease |>
+  distinct(Disease) |> 
+  filter(!Disease %in% c(exclude_diseases, "Healthy")) |> 
+  pull(Disease)
+
+disease_class_order_ml <-
+  meta_disease |> 
+  distinct(Class, Disease) |> 
+  filter(Disease %in% include_diseases) |> 
+  arrange(Class) |> 
+  pull(Disease)
+```
+
+## Prepare data
+
+```{r}
+ml_data <- 
+  resource_data |>
+  left_join(resource_meta |> 
+              select(DAid, Disease, Class), by = "DAid") |> 
+  filter(Disease %in% c(include_diseases, "Healthy")) |> 
+  select(DAid, Disease, Assay, NPX) |> 
+  pivot_wider(names_from = Assay,
+              values_from = NPX) 
+
+
+# Split data 100 times
+seeds <- c(1:100)
+random_splits <-
+  map(seeds, \(seed) generate_split(data = ml_data,
+                                    proportion = 0.7,
+                                    variable_stratify = "Disease",
+                                    seed = seed))
+
+#saveRDS(random_splits, savepath_data("splits", "random_splits.rds"))
+```
+
+## Read results from cluster 
+
+```{r}
+ml_multiclass <- readRDS("scripts/random/summer/parsed-results/multiclass_multiclass_results.rds")
+
+ml_class <- 
+  map(c("Cardiovascular", "Metabolic", "Cancer", "Autoimmune", "Infection"), \(class) {
+    
+    readRDS(paste0("scripts/random/summer/parsed-results/", class, "_multiclass_results.rds"))
+    
+  })
+
+ml_healthy <- 
+  map(c("Cardiovascular", "Metabolic", "Cancer", "Psychiatric", "Autoimmune", "Infection"), \(class) {
+    
+     readRDS(paste0("scripts/random/summer/parsed-results/binary_results/", class, "_binary_results.rds"))
+    
+  })
+
+ml_multiclass$predictions
+```
+
+## Feature importance
+### Extracts importances
+
+```{r}
+class_importance <- 
+  map_df(ml_class, \(ml_res) {
+    
+   ml_res$protein_importance
+    
+  })
+
+healthy_importance <- 
+  map_df(ml_healthy, \(ml_res) {
+    
+   ml_res$protein_importance |> 
+      rename(class = Disease)
+    
+  })
+
+multiclass_importance <- ml_multiclass$protein_importance
+
+# multiclass_importance |> 
+#   ungroup() |> 
+#   group_by(class) |> 
+#   summarise(n = n_distinct(seed)) |> 
+#   arrange(n) |> View()
+
+# ranked_glioma_25 <- 
+#   multiclass_importance |> 
+#   filter(class == "Glioma") |> 
+#   count(term) |> 
+#   arrange(-n) |> 
+#   head(25)
+# 
+# multiclass_importance |> 
+#   filter(class == "Glioma",
+#          term %in% ranked_glioma_25$term) |> 
+#   plot_top_proteins_seed(plot_color = pal_class[["Cancer"]]) +
+#   ggtitle("Glioma")
+#   
+# ggsave(savepath("glioma_multiclass.png"), h = 5, w = 5)
+
+
+
+# ranked_vte_25 <- 
+#   multiclass_importance |> 
+#   filter(class == "Acute venous thromboembolism") |> 
+#   count(term) |> 
+#   arrange(-n) |> 
+#   head(25)
+# 
+# multiclass_importance |> 
+#   filter(class == "Acute venous thromboembolism",
+#          term %in% ranked_vte_25$term) |> 
+#   plot_top_proteins_seed(plot_color = pal_class[["Cardiovascular"]]) +
+#   ggtitle("Actute venous thromboembolism")
+#   
+# ggsave(savepath("vte_multiclass.png"), h = 5, w = 5)
+
+```
+
+
+### Protein importance for example diseases
+
+```{r}
+multiclass_importance  |> 
+  distinct(class) |> 
+  filter(!class %in% include_diseases)
+
+example_diseases <- c("Acute myeloid leukemia",
+                      "Influenza",
+                      "Acute coronary syndrome",
+                      "Rheumatoid arthritis",
+                      "Viral hepatitis related cirrhosis", 
+                      "Schizophrenia")
+
+
+multiclass_importance |> 
+  mutate(class = ifelse(class == "Scleroderma", "Systemic sclerosis", class)) |> 
+  group_by(class, term) |> 
+  summarise(avg_estimate = mean(estimate)) |> 
+  group_by(class) |> 
+  top_n(n = 20, wt = abs(avg_estimate)) |> 
+  arrange(class, avg_estimate) |> 
+  mutate(Names = paste(class, avg_estimate)) |> 
+  left_join(resource_meta |> 
+              distinct(Disease, Class), by = c("class" = "Disease")) |> 
+  filter(class %in% example_diseases) |> 
+  #filter(class != "Healthy") |> 
+ # mutate(class = factor(class, levels = disease_class_order[disease_class_order %in% include_diseases])) |> 
+  ggplot(aes(fct_reorder(Names, -avg_estimate), avg_estimate, color = Class)) + 
+  geom_point(show.legend = F) + 
+  geom_segment(aes(x = Names, xend = Names, y = 0, yend = avg_estimate), show.legend = F) + 
+  geom_text(aes(label = term), show.legend = F, angle = 90, size = 2) + 
+  geom_hline(yintercept = 0) + 
+  facet_wrap(~class, scales = "free_x", nrow = 1) + 
+  scale_color_manual(values = pal_class) + 
+  xlab("") + 
+  theme_hpa(axis_x = F)
+
+ggsave(savepath("features-multiclass.pdf"), h = 3, w = 12)
+
+```
+
+
+### Number important features
+
+```{r}
+plot_n_importance(class_importance)
+ggsave(savepath("features_class.png"), h = 5, w = 10)
+
+plot_n_importance(multiclass_importance)
+ggsave(savepath("features_multiclass.png"), h = 5, w = 10)
+
+plot_n_importance(healthy_importance)
+ggsave(savepath("features_binary.png"), h = 5, w = 10)
+
+# Have it faceted
+
+
+```
+
+### Number of time a feature is selected
+
+```{r}
+multiclass_importance |>
+  group_by(class, term) |> 
+  summarize(n = n_distinct(seed)) |> 
+  left_join(resource_meta |> distinct(Disease, Class), by = c("class" = "Disease")) |>
+  mutate(class = factor(class, levels = disease_class_order)) |> 
+  #filter(n > 25) |> 
+  ggplot(aes(class, n, color = Class, fill = Class)) +
+  geom_quasirandom(size = 0.5) +
+  geom_boxplot(width = 0.5, outlier.color = NA, color = "grey20", alpha = 0.5) +
+  scale_color_manual(values = pal_class) + 
+  scale_fill_manual(values = pal_class) + 
+  theme_hpa(angled = T)
+
+healthy_importance |>
+  group_by(class, term) |> 
+  summarize(n = n_distinct(seed)) |> 
+  left_join(resource_meta |> distinct(Disease, Class), by = c("class" = "Disease")) |>
+  mutate(class = factor(class, levels = disease_class_order)) |> 
+  #filter(n > 25) |> 
+  ggplot(aes(class, n, color = Class, fill = Class)) +
+  geom_quasirandom(size = 0.5) +
+  geom_boxplot(width = 0.5, outlier.color = NA, color = "grey20", alpha = 0.5) +
+  scale_color_manual(values = pal_class) + 
+  scale_fill_manual(values = pal_class) + 
+  theme_hpa(angled = T)
+
+
+dat_healthy <- 
+  healthy_importance |> 
+  filter(class %in% example_diseases) |> 
+  group_by(term, class) |> 
+  summarise(abs_estimate = mean(abs(estimate))) |> 
+  arrange(-abs_estimate)  |> 
+  left_join(healthy_importance |>
+              group_by(class) |> 
+               count(term), by = c("term", "class")) |> 
+   left_join(resource_meta
+            |> distinct(Disease, Class), by = c("class" = "Disease")) |>
+  mutate(Type = "Healthy") 
+
+#p1 <- 
+p1 <- 
+  dat_healthy |> 
+ 
+  ggplot(aes(abs_estimate, n, color = Class)) +
+  geom_point() +
+  geom_text_repel(data = filter(dat_healthy, abs_estimate > 0.4),
+                  aes(label = term), size = 3) +
+  facet_wrap(~class, scales = "free_x", nrow = 1) +
+  scale_color_manual(values = pal_class) +
+  theme_hpa() +
+  ggtitle("Healthy")
+
+
+dat_hmulti<- 
+  multiclass_importance |> 
+  filter(class %in% example_diseases) |> 
+  group_by(term, class) |> 
+  summarise(abs_estimate = mean(abs(estimate))) |> 
+  arrange(-abs_estimate)  |> 
+  left_join(multiclass_importance |>
+              group_by(class) |> 
+               count(term), by = c("term", "class")) |> 
+   left_join(resource_meta
+            |> distinct(Disease, Class), by = c("class" = "Disease")) |>
+  mutate(Type = "Healthy") 
+
+#p1 <- 
+p2 <- 
+  dat_hmulti |> 
+ 
+  ggplot(aes(abs_estimate, n, color = Class)) +
+  geom_point() +
+  geom_text_repel(data = filter(dat_hmulti, abs_estimate > 0.4),
+                  aes(label = term), size = 3) +
+  facet_wrap(~class, scales = "free_x", nrow = 1) +
+  scale_color_manual(values = pal_class) +
+  theme_hpa() +
+  ggtitle("Multiclass")
+
+
+p1 / p2
+ggsave(savepath("number_features-healthy_multi.png"), h = 8, w = 12)
+
+healthy_importance |> 
+  filter(class == "Acute myeloid leukemia") |> 
+  filter(abs(estimate) > 0) |> 
+  count(term) |> 
+  arrange(-n)
+
+```
+
+### Example diseases
+
+```{r}
+
+example_diseases <- c("Rheumatoid arthritis",
+                      "Acute venous thromboembolism",
+                      "Schizophrenia",
+                      "MASLD", 
+                      "Malaria")
+
+imp_plots <- 
+  map(example_diseases, \(disease) {
+    
+    imp <- 
+      multiclass_importance |> 
+      filter(class == disease)
+    
+    current_class <- 
+      resource_meta |> 
+      filter(Disease == disease) |> 
+      pull(Class) |> 
+      unique()
+    
+    plot_top_proteins_seed(imp, 
+                           plot_color = pal_class[[current_class]],
+                           n = 10) +
+      ggtitle(disease) 
+  })
+
+imp_plots_healthy <- 
+  map(example_diseases, \(disease) {
+    
+    imp <- 
+      healthy_importance |> 
+      filter(class == disease)
+    
+    current_class <- 
+      resource_meta |> 
+      filter(Disease == disease) |> 
+      pull(Class) |> 
+      unique()
+    
+    plot_top_proteins_seed(imp, 
+                           plot_color = pal_class[[current_class]],
+                           n = 10) +
+      ggtitle(disease)
+    
+    
+  })
+
+imp_plots[[1]] / imp_plots[[2]] / imp_plots[[3]] / imp_plots[[4]] / imp_plots[[5]] 
+ggsave(savepath("features_selected_diseases.pdf"), h = 16, w = 4)
+
+
+p1 <- 
+  imp_plots[[1]] | imp_plots[[2]] | imp_plots[[3]]| imp_plots[[4]]| imp_plots[[5]] +
+  ggtitle("Multiclass")
+
+p2 <- 
+  imp_plots_healthy[[1]] | imp_plots_healthy[[2]] | imp_plots_healthy[[3]]| imp_plots_healthy[[4]]| imp_plots_healthy[[5]] +
+  ggtitle("Healthy")
+
+ggsave(savepath("features_selected_diseases.pdf"), h = 4, w = 16)
+ggsave(savepath("features_selected_diseases.pdf"), h = 4, w = 16)
+
+
+p2/p1
+ggsave(savepath("features_selected_diseases.png"), h = 8, w = 16)
+
+
+```
+
+
+### Compare
+
+```{r}
+
+dat_compare_imp <- 
+  multiclass_importance |> 
+  select(term, class, estimate, seed) |> 
+  group_by(term, class) |> 
+  summarise(abs_estimate_multiclass = mean(abs(estimate)),
+            n_multiclass = n_distinct(seed)) |> 
+  left_join(healthy_importance |> 
+              select(term, class, estimate, seed) |> 
+              group_by(term, class) |> 
+              summarise(abs_estimate_healthy = mean(abs(estimate)),
+                        n_healthy = n_distinct(seed)), by = c("term", "class")) |> 
+  mutate(n_multiclass = ifelse(is.na(n_multiclass), 0, n_multiclass),
+         n_healthy = ifelse(is.na(n_healthy), 0, n_healthy),
+         abs_estimate_multiclass = ifelse(is.na(abs_estimate_multiclass), 0, abs_estimate_multiclass), 
+         abs_estimate_healthy = ifelse(is.na(abs_estimate_healthy), 0, abs_estimate_healthy))
+
+dat_compare_imp |> 
+  filter(class %in% example_diseases) |> 
+  left_join(resource_meta |> 
+              distinct(Disease, Class), by = c("class" = "Disease")) |> 
+  ggplot(aes(n_multiclass, n_healthy, color = Class)) +
+  geom_point() +
+  geom_text_repel(aes(label = term)) +
+  facet_wrap(~class, nrow = 1) +
+  scale_color_manual(values = pal_class) +
+  theme_hpa()
+
+ggsave(savepath("comparison_imp_n.png"), h = 7, w = 14)
+
+dat_compare_imp |> 
+  filter(class %in% example_diseases) |> 
+  left_join(resource_meta |> 
+              distinct(Disease, Class), by = c("class" = "Disease")) |> 
+  ggplot(aes(abs_estimate_multiclass, abs_estimate_healthy, color = Class)) +
+  geom_point() +
+  geom_text_repel(aes(label = term)) +
+  facet_wrap(~class, nrow = 1) +
+  scale_color_manual(values = pal_class) +
+  theme_hpa()
+
+ggsave(savepath("comparison_imp_estimate.png"), h = 7, w = 14)
+```
+
+### Feature overlap 
+
+
+### Protein pleiotropy
+
+```{r}
+
+multiclass_importance_avg <- 
+  multiclass_importance |> 
+  group_by(class, term) |> 
+  summarise(avg_abs_estimate = mean(abs(estimate))) 
+  
+multiclass_importance_avg |> 
+  count(class) |> 
+  arrange(n) |> 
+  left_join(resource_meta |> 
+              distinct(Disease, Class), by = c("class" = "Disease")) |> 
+  mutate(class = factor(class, levels = disease_class_order_ml)) |> 
+  ggplot(aes(class, n, fill = Class)) +
+  geom_col() +
+  scale_fill_manual(values = pal_class) +
+  theme_hpa(angled = T)
+
+total_n_contribution <- 
+  multiclass_importance_avg |> 
+  ungroup() |> 
+  count(term) |> 
+  arrange(-n) |> 
+  head(30)
+
+multiclass_importance_avg |> 
+  filter(term %in% total_n_contribution$term) |> 
+  left_join(resource_meta |> 
+              distinct(Disease, Class), by = c("class" = "Disease")) |> 
+  group_by(term) |> 
+  count(Class) |>
+  left_join(total_n_contribution |> 
+              rename(total_n = n), by = "term") |>
+  ggplot(aes(fct_reorder(term, -total_n), n, fill = Class)) +
+  geom_col() +
+  scale_fill_manual(values = pal_class) +
+  theme_hpa(angled = T) +
+  xlab("")
+
+```
+
+### Network
+
+```{r}
+ml_features <- 
+  multiclass_importance_avg |> 
+  filter(avg_abs_estimate > 0.05) |>
+  select(proteins = term,
+         disease = class)
+
+
+overlap_diseases <- 
+  expand_grid(disease1 = unique(ml_features$disease), 
+              disease2 = unique(ml_features$disease))   |> 
+    filter(disease1 != disease2) |> 
+    group_by_all() |> 
+    do({
+      
+      d1 <- .$disease1
+      d2 <- .$disease2
+      
+      disease1 <- 
+        ml_features |> 
+        filter(disease == d1) |> 
+        pull(proteins)
+      
+      disease2 <- 
+        ml_features |> 
+        filter(disease == d2) |> 
+        pull(proteins)
+      
+      ov <- length(intersect(disease1, disease2)) 
+      
+      tibble(disease1 = d1,
+             disease2 = d2,
+             overlap = ov)
+      
+    }) 
+
+a <- 
+  overlap_diseases |>
+  group_by(disease1) |> 
+  top_n(3, overlap) |> 
+  ungroup() |> 
+  filter(overlap > 50)
+
+tg <- 
+  as_tbl_graph(a, directed = FALSE) |> 
+  activate(nodes) |> 
+  left_join(resource_meta |> 
+              select(name = Disease, Class) |> 
+              distinct(), by = "name")
+
+ggraph(tg, layout = "stress") +
+  geom_edge_link(aes(width = overlap), color = "grey") +
+  geom_node_point(aes(color = Class), size = 10) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  scale_color_manual(values = pal_class) +
+  theme_void() 
+
+ggsave(savepath("de_overlap.png"), h = 8, w = 8)
+```
+
+
+### ukb
+
+```{r}
+dat <- 
+  multiclass_importance |> 
+  group_by(term, class) |> 
+  summarise(n = n_distinct(seed),
+            importance = mean(abs(estimate))) |> 
+  ungroup() |> 
+  group_by(class) |> 
+  mutate(rank_importance = rank(-importance),
+         rank_n = rank(-n)) |> 
+  ungroup() |> 
+  mutate(sum_rank = rank_importance + rank_n) 
+
+dat_filter <- 
+  dat |> 
+  filter(n > 40) #|> 
+  #count(class) |> 
+  #arrange(-n)
+
+saveRDS(dat_filter, savepath_data("ML_test", "ml_multiclass_over50.rds"))
+
+
+```
+
+## Performances
+
+Performances per disease against comparisons:
+
+### Extract predictions
+
+```{r}
+
+class_predictions <- 
+  map_df(ml_class, \(ml_res) {
+    
+   ml_res$predictions
+    
+  })
+
+healthy_predictions <- 
+  map_df(ml_healthy, \(ml_res) {
+    
+   ml_res$predictions |> 
+      rename(class = Disease) |> 
+      mutate(.pred_class = )
+    
+  })
+
+multiclass_predictions <- ml_multiclass$predictions
+
+```
+
+### Calculate performance
+
+```{r}
+
+predictions <- 
+  healthy_predictions |> 
+  filter(!is.na(`.pred_0_Bipolar disorder`)#,
+         #seed == 1
+         ) 
+
+predictions <- 
+  class_predictions |> 
+  filter(!is.na(`.pred_Abdominal aortic aneurysm`))
+
+do_roc <- function(predictions) {
+  
+  
+  clases <- 
+    predictions |> 
+    distinct(.pred_class) |> 
+    pull()
+  
+  if(length(classes) > 2) {
+    
+    
+    
+  } else {
+    
+    roc <- 
+      predictions |>
+      roc_curve(truth = Disease, paste0(".pred_1_", disease), event_level = "second")
+    
+    # AUC
+    res <- 
+      predictions |> 
+      rename(prediction = paste0(".pred_1_", disease)) |> 
+      mutate(Disease = factor(Disease, levels = c("0_Healthy", paste0("1_", disease))))
+    
+    auc <- pROC::auc(res$Disease, res$prediction)
+    ci <- pROC::ci.auc(res$Disease, res$prediction) 
+    
+    roc |> 
+      mutate(AUC = auc,
+             CI = ci)
+    
+  }
+  
+}
+
+```
+
+
+### Plot AUC comparison
+
+### Plot ROC for selected diseases
+
+### Plot confusion matrix
+
+```{r}
+
+multiclass_predictions |> 
+  mutate(.pred_class = ifelse(.pred_class == "Scleroderma", "Systemic sclerosis", .pred_class),
+         Disease = ifelse(Disease == "Scleroderma", "Systemic sclerosis", Disease),
+         Disease = factor(Disease),
+         .pred_class = factor(.pred_class)) |>
+  rename(`.pred_Systemic sclerosis` = `.pred_Scleroderma`) |>
+  conf_mat(truth = Disease, estimate = .pred_class)  |> 
+  plot_cm(percentage = T) 
+
+ggsave(savepath("confusion_matrix_multiclass.pdf"), width = 10, height = 10)
+```
+
+

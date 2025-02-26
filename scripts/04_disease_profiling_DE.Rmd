@@ -1,0 +1,483 @@
+---
+title: "02_disease_profiling"
+output: html_document
+autor: "María Bueno Álvez"
+date: "2024-12-13"
+editor_options: 
+  chunk_output_type: console
+---
+
+# Set up
+
+```{r}
+source("scripts/functions/functions_analyses.R")
+source("scripts/functions/functions_utility.R")
+source("scripts/functions/functions_visualization.R")
+source("scripts/functions/themes_palettes.R")
+
+# Read in data
+data_disease <- read_tsv("data/data_phase1_pandisease_curated_20250226.tsv")
+meta_disease <- read_tsv("data/meta_phase1_pandisease_20250226.tsv")
+```
+
+## Disease order
+
+```{r}
+disease_class_order <-
+  meta_disease |> 
+  distinct(Class, Disease) |> 
+  mutate(Class = factor(Class, levels = class_order)) |> 
+  arrange(Class) |> 
+  pull(Disease)
+
+diseases <- 
+  meta_disease |> 
+  filter(Class != "Healthy") |> 
+  distinct(Disease) |> 
+  mutate(Disease = factor(Disease, levels = disease_class_order)) |> 
+  arrange(Disease) |> 
+  pull()
+
+classes <- 
+  meta_disease |> 
+  filter(Class != "Healthy") |> 
+  distinct(Class) |> 
+  pull()
+```
+
+
+
+## Against healthy
+
+```{r}
+de_healthy <- 
+  map_df(as.character(diseases), function(disease) {
+    
+    message("Processing disease: ", disease)
+    
+    disease_healthy_meta <- 
+      match_samples(
+        metadata = meta_disease, 
+        case = disease, 
+        control = "Healthy") |> 
+      mutate(Disease = ifelse(Disease == disease, disease, "Control")) |> 
+      select(DAid = DAid, Disease, Sex, Age, BMI)
+    
+    disease_healthy_data <-
+      data_disease |>
+      filter(DAid %in% disease_healthy_meta$DAid) |>
+      select(DAid, Assay, NPX) |>
+      pivot_wider(names_from = "Assay", values_from = "NPX")
+    
+    healthy_res <-
+      do_limma_disease(data_wide = disease_healthy_data,
+                       metadata = disease_healthy_meta,
+                       disease = disease,
+                       cutoff = 0.5,
+                       controls = "Healthy",
+                       correct = T) 
+    
+  })
+```
+
+## Against class
+
+```{r}
+de_class <- 
+  map_df(as.character(diseases), function(disease) {
+    
+    message("Processing disease: ", disease)
+
+    # Get the class of the current disease
+    class <- 
+      meta_disease |> 
+      filter(Disease == disease) |> 
+      pull(Class) |> 
+      unique()
+    
+    # Find diseases in the same class but not the current disease
+    diseases_control <- 
+      meta_disease |>
+      distinct(Disease, Class) |>
+      filter(Class == class,
+             Disease != disease) 
+    
+    # Filter controls based on gender-specific diseases
+    if(disease %in% female_diseases) {
+      
+       diseases_control <- 
+        diseases_control |> 
+        filter(!Disease %in% male_diseases) |> 
+        pull(Disease)
+       
+    } else if (disease %in% male_diseases) {
+      
+       diseases_control <- 
+        diseases_control |> 
+         filter(!Disease %in% female_diseases) |> 
+        pull(Disease)
+       
+    } else {
+     
+       diseases_control <- 
+        diseases_control |> 
+        pull(Disease)
+        
+    }
+    
+# Match controls for each disease in diseases_control
+    controls_meta <-
+      map_df(diseases_control, function(control_disease) {
+        matched_controls <-
+          match_samples(metadata = meta_disease,
+                        case = disease,
+                        control = control_disease)
+        
+        matched_controls |>
+          filter(Disease == control_disease)
+        
+      })
+    message("Control samples: ", nrow(controls_meta))
+    
+    # Combine disease and control metadata
+    disease_class_meta <- 
+      meta_disease |> 
+      filter(Disease == disease) |> 
+      bind_rows(controls_meta) |> 
+      mutate(Disease = ifelse(Disease == disease, disease, "Control")) |> 
+      select(DAid = DAid, Disease, Sex, Age, BMI)
+    
+    # Prepare data for differential expression analysis
+    disease_class_data <- 
+      data_disease |> 
+      filter(DAid %in% disease_class_meta$DAid) |> 
+      select(DAid, Assay, NPX) |> 
+      pivot_wider(names_from = "Assay", values_from = "NPX")
+    
+    # Perform differential expression analysis
+    class_res <- 
+      do_limma_disease(data_wide = disease_class_data, 
+                       metadata = disease_class_meta,
+                       disease = disease,
+                       cutoff = 0.5,
+                       controls = "Class",
+                       correct = T)
+    
+  })
+```
+
+## Against other diseases
+
+```{r}
+de_diseases <- 
+  map_df(as.character(diseases), function(disease) {
+    
+    message("Processing disease: ", disease)
+    
+    # Find control diseases
+    diseases_control <- 
+      meta_disease |>
+      distinct(Disease) |>
+      filter(Disease != disease,
+             Disease != "Healthy") 
+    
+    # Filter controls based on gender-specific diseases
+    if(disease %in% female_diseases) {
+      
+      diseases_control <- 
+        diseases_control |> 
+        filter(!Disease %in% male_diseases) |> 
+        pull(Disease)
+      
+    } else if (disease %in% male_diseases) {
+      
+      diseases_control <- 
+        diseases_control |> 
+        filter(!Disease %in% female_diseases) |> 
+        pull(Disease)
+      
+    } else {
+      
+      diseases_control <- 
+        diseases_control |> 
+        pull(Disease)
+      
+    }
+    
+    # Match controls for each disease in diseases_control
+    controls_meta <-
+      map_df(diseases_control, function(control_disease) {
+        
+        matched_controls <-
+          match_samples(metadata = meta_disease,
+                        case = disease,
+                        control = control_disease)
+        
+        matched_controls |>
+          filter(Disease == control_disease)
+        
+      })
+    
+    # Combine disease and control metadata
+    disease_meta <- 
+      meta_disease |> 
+      filter(Disease == disease) |> 
+      bind_rows(controls_meta) |> 
+      mutate(Disease = ifelse(Disease == disease, disease, "Control")) |> 
+      select(DAid = DAid, Disease, Sex, Age, BMI)
+    
+    
+    disease_data <- 
+      data_disease |> 
+      filter(DAid %in% disease_meta$DAid) |> 
+      select(DAid, Assay, NPX) |> 
+      pivot_wider(names_from = "Assay", values_from = "NPX")
+    
+    disease_res <- 
+      do_limma_disease(data_wide = disease_data, 
+                       metadata = disease_meta,
+                       disease = disease,
+                       cutoff = 0.5,
+                       controls = "ALl other diseases",
+                       correct = T)
+    
+  })
+```
+
+## Combine 
+
+```{r}
+combined_de <- 
+  de_healthy |> 
+  bind_rows(de_class) |> 
+  bind_rows(de_diseases) |> 
+  mutate(adj.P.Val = ifelse(adj.P.Val == 0, 1e-320, adj.P.Val))
+
+saveRDS(combined_de, savepath_data("DE_v6", "combined_de.rds"))
+combined_de <- readRDS(savepath_data("DE_v6", "combined_de.rds"))
+ 
+# Save to excel
+library(xlsx)
+map(classes, function(current_class) {
+  
+  dir.create(paste0("data/processed/DE_ML_resource_v5/", current_class), showWarnings = FALSE)
+  dir.create(paste0("data/processed/DE_ML_resource_v5/", current_class, "/DE"), showWarnings = FALSE)
+
+  diseases_class <- 
+    resource_meta |> 
+    distinct(Disease, Class) |> 
+    filter(Class == current_class) |> 
+    pull(Disease)
+  
+  class_de <- 
+    combined_de |> 
+    filter(Disease %in% diseases_class) |> 
+    mutate(Disease = case_when(Disease == "Staphylococcus aureus bacteremia" ~ "S. aureus bacteremia",
+                               Disease == "Streptococcal soft tissue infection" ~ "S. soft tissue infection",
+                               Disease == "Viral hepatitis related cirrhosis" ~ "Viral related cirrhosis", 
+                               Disease == "Actute venous thromboembolism" ~ "Acute VTE", 
+                               Disease == "Previous venous thromboembolism" ~ "Previous VTE", 
+                               Disease == "Diffuse astrocytic and oligodendro. tumor" ~ "Diffuse astro & oligodendro tumor",
+                               Disease == "Pediatric systemic inflammatory disease" ~ "Systemic inflammatory disease",
+                               Disease == "Pediatric diffuse astrocytic and oligodendro. tumor" ~ "Diffuse astro & oligo tumor",
+                               Disease == "Small intestine neuroendocrine tumor" ~ "Small intestine NET",
+                               T ~ Disease)) |> 
+    select(Disease, Control, Assay, logFC, adj.P.Val, sig) |> 
+    pivot_wider(names_from = Control,
+                values_from = c(logFC, adj.P.Val, sig)) 
+  
+  de_df <-
+    class_de %>%
+    split(.$Disease)
+  
+  write.xlsx(de_df, file = savepath_data("DE_ML_resource_v5", paste0(current_class, "/DE/", current_class, "_DE_results.xlsx")))
+  
+})
+```
+
+## Visualization
+
+
+### Summary
+
+```{r}
+de_plot <- 
+  combined_de |> 
+  left_join(resource_meta |> 
+              distinct(Disease, Class), by = "Disease") |> 
+  mutate(Disease = factor(Disease, levels = rev(disease_class_order)))
+
+labels <- 
+  de_plot |>
+  filter(sig != "not significant") |> 
+  group_by(Control, Disease) |> 
+  top_n(1, -log10(adj.P.Val)) |> 
+   group_by(Control, Disease) |> 
+  do({
+    . |> 
+      head(1)
+  })
+
+dat <- 
+  de_plot |> 
+  filter(sig != "not significant") |> 
+  group_by(Control, Disease, Class, sig) |> 
+  count(sig) 
+
+total_n <- 
+  dat |> 
+  group_by(Control, Disease) |> 
+  summarise(n = sum(n))
+
+  dat |> 
+  filter(Control == "ALl other diseases") |> 
+  ggplot(aes(Disease,n, fill = sig, color = sig)) +
+  geom_col(show.legend = F) +
+  geom_text(data = total_n |> filter(Control == "ALl other diseases"), aes(label = n, x = Disease, y = n + 30), vjust = 0.5, show.legend = F, size = 3, inherit.aes = F) +
+  scale_color_manual(values = pal_de) +
+  scale_fill_manual(values = pal_de) +
+  coord_flip() +
+  theme_hpa(angled = T) +
+  theme(strip.background = element_blank(),  
+        strip.text = element_blank())   
+  
+  
+
+p1_healthy <- 
+  dat |> 
+  filter(Control == "Healthy") |> 
+  ggplot(aes(Disease,n, fill = sig, color = sig)) +
+  geom_col(show.legend = F) +
+  geom_text(data = total_n |> filter(Control == "Healthy"), aes(label = n, x = Disease, y = n + 30), vjust = 0.5, show.legend = F, size = 3, inherit.aes = F) +
+  scale_color_manual(values = pal_de) +
+  scale_fill_manual(values = pal_de) +
+  scale_y_reverse() +
+  coord_flip() +
+  theme_hpa(angled = T, axis_y = F) +
+  theme(strip.background = element_blank(),  
+        strip.text = element_blank())   
+
+p1_all_diseases <- 
+  dat |> 
+  filter(Control == "ALl other diseases") |> 
+  ggplot(aes(Disease,n, fill = sig, color = sig)) +
+  geom_col(show.legend = F) +
+  geom_text(data = total_n |> filter(Control == "ALl other diseases"), aes(label = n, x = Disease, y = n + 30), vjust = 0.5, show.legend = F, size = 3, inherit.aes = F) +
+  scale_color_manual(values = pal_de) +
+  scale_fill_manual(values = pal_de) +
+  coord_flip() +
+  theme_hpa(angled = T, axis_y = F) +
+  theme(strip.background = element_blank(),  
+        strip.text = element_blank())   
+
+p1_class <- 
+  dat |> 
+  filter(Control == "Class") |> 
+  ggplot(aes(Disease,n, fill = sig, color = sig)) +
+  geom_col(show.legend = F) +
+  geom_text(data = total_n |> filter(Control == "Class"), aes(label = n, x = Disease, y = n + 30), vjust = 0.5, show.legend = F, size = 3, inherit.aes = F) +
+  scale_color_manual(values = pal_de) +
+  scale_fill_manual(values = pal_de) +
+  coord_flip() +
+  theme_hpa(angled = T) +
+  theme(strip.background = element_blank(),  
+        strip.text = element_blank())   +
+  xlab("")
+
+
+p2_healthy <- 
+  de_plot |> 
+  filter(sig != "not significant",
+         Control == "Healthy") |> 
+  ggplot(aes(Disease, -log10(adj.P.Val), color = sig, fill = sig)) +
+  geom_quasirandom(show.legend = F, size = 0.5) +
+  geom_text(data = labels |> filter(Control == "Healthy"), aes(label = Assay, y = -log10(adj.P.Val) + 20), nudge_y = 0.5, size = 2, show.legend = F) +
+  scale_color_manual(values = pal_de) +
+  coord_flip() +
+  scale_y_reverse() +
+  theme_hpa(angled = T, axis_y = F) 
+
+p2_all_diseases <- 
+  de_plot |> 
+  filter(sig != "not significant",
+         Control == "ALl other diseases") |> 
+  ggplot(aes(Disease, -log10(adj.P.Val), color = sig, fill = sig)) +
+  geom_quasirandom(show.legend = F, size = 0.5) +
+  geom_text(data = labels |> filter(Control == "ALl other diseases"), aes(label = Assay, y = -log10(adj.P.Val) + 20), nudge_y = 0.5, size = 2, show.legend = F) +
+  scale_color_manual(values = pal_de) +
+  coord_flip() +
+  theme_hpa(angled = T, axis_y = F) 
+
+
+p2_class <- 
+  de_plot |> 
+  filter(sig != "not significant",
+         Control == "Class") |> 
+  ggplot(aes(Disease, -log10(adj.P.Val), color = sig, fill = sig)) +
+  geom_quasirandom(show.legend = F, size = 0.5) +
+  geom_text(data = labels |> filter(Control == "Class"), aes(label = Assay, y = -log10(adj.P.Val) + 20), nudge_y = 0.5, size = 2, show.legend = F) +
+  scale_color_manual(values = pal_de) +
+  coord_flip() +
+  theme_hpa(angled = T, axis_y = F) 
+
+p_blank <-   ggplot() + theme_void()
+
+p1_class + p2_class +
+  plot_layout(widths = c(1,2))
+
+ggsave(savepath("de_class.pdf"), h = 12, w = 6)
+ggsave(savepath("de_class.png"), h = 12, w = 8)
+
+p2_healtht + p1_healthy + p_blank + p1_all_diseases + p2_all_diseases +
+  plot_layout(widths = c(2,1,1,1,2))
+
+ggsave(savepath("de_healthy_all.pdf"), h = 12, w = 10)
+
+```
+
+
+
+### Fig 4
+
+```{r}
+
+proteins <- c("GFAP", 
+              "CA14",
+              "IL6",
+              "PRL",
+              "SULT1A1")
+
+
+resource_data |> 
+  left_join(resource_meta |> 
+              select(DAid, Disease, Class), by = "DAid") |> 
+  filter(Assay %in% proteins) |> 
+  mutate(Disease = factor(Disease, levels = disease_class_order)) |> 
+  ggplot(aes(Disease, NPX, color = Class, fill = Class)) +
+  geom_quasirandom(size = 0.2, alpha = 0.3 , show.legend = F) +
+  geom_boxplot(width = 0.5, size = 0.3, alpha = 0.8, outlier.color = NA, color = "grey20",show.legend = F) +
+  scale_color_manual(values = pal_class) + 
+  scale_fill_manual(values = pal_class) + 
+  facet_wrap(~Assay, scales = "free_y", ncol = 1) +
+  theme_hpa() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+        axis.ticks.x = element_blank(),
+        axis.line.x = element_blank(),
+        strip.background = element_blank()
+        ) +
+  xlab("")
+
+ggsave(savepath("examples_de.pdf"), h = 9, w = 12)
+ 
+```
+### Network
+
+```{r}
+
+```
+
+### Overlap
+
+```{r}
+
+```
