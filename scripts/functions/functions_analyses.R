@@ -22,7 +22,7 @@ do_anova <- function(df, protein) {
     filter(Assay == protein)
   
   # Linear model with all variables
-  model <- lm(NPX ~ subject + age + sex + visit , data = df) #+ month_of_sampling
+  model <- lm(NPX ~ Age + Sex + BMI + Disease , data = df) #+ month_of_sampling
   
   # Conduct ANOVA
   anova_res <- anova(model)
