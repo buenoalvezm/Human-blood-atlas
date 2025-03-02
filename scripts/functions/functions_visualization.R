@@ -799,30 +799,142 @@ plot_boxplot <- function(proteins,
 }
 
 plot_donut <- 
-  function(proteins) {
-    
-    donut_data <- 
-      tibble(Assay = proteins) |> 
-      left_join(secretome_hpa |> 
-                  select(Gene, `Secretome location`), by = c("Assay" = "Gene")) |> 
-      mutate(`Secretome location` = ifelse(is.na(`Secretome location`), "Not secreted", `Secretome location`)) |> 
-      count(`Secretome location`) |> 
-      mutate(percentage = n / sum(n) * 100,  # Calculate percentage for each class
-             label = paste0(`Secretome location`, " (", n, ")"))  # Create labels
+  function(proteins, type, legend = T) {
     
     
-    # Donut plot
-    donut_data |> 
-      ggplot(aes(x = 2, y = n, fill = `Secretome location`)) + 
-      geom_bar(stat = "identity", width = 1, color = "white") +  
-      coord_polar(theta = "y") +  
-      xlim(1, 2.5) +  
-      theme_void() +
-      theme(legend.position = "none") +
-      scale_fill_manual(values = c(pal_secreted, "Not secreted" = "grey80")) +
-      geom_text(aes(label = ifelse(n > 25, n, "")),  # Display numbers only if n > 25
-                position = position_stack(vjust = 0.5),  # Center labels within segments
-                color = "white", size = 4)
+    if(type == "secretome") {
+      
+      donut_data <- 
+        tibble(Assay = proteins) |> 
+        left_join(secretome_hpa |> 
+                    select(Gene, `Secretome location`), by = c("Assay" = "Gene")) |> 
+        mutate(`Secretome location` = ifelse(is.na(`Secretome location`), "Not secreted", `Secretome location`),
+               `Secretome location` = ifelse(`Secretome location` == "Intracellular and membrane", "Not secreted", `Secretome location`)) |> 
+        count(`Secretome location`) |> 
+        mutate(percentage = n / sum(n) * 100, 
+               label = paste0(`Secretome location`, " (", n, ")"))  
+      
+      # Donut plot
+      donut_data |> 
+        ggplot(aes(x = 2, y = n, fill = `Secretome location`)) + 
+        geom_bar(stat = "identity", width = 1, color = "white", show.legend = legend) +  
+        coord_polar(theta = "y") +  
+        xlim(1, 2.5) +  
+        theme_void() +
+        theme(legend.position = "none") +
+        scale_fill_manual(values = c(pal_secreted, "Not secreted" = "grey80")) +
+        geom_text(aes(label = ifelse(n > 25, n, "")),  
+                  position = position_stack(vjust = 0.5),  
+                  color = "white", size = 4) +
+        theme(legend.position = "bottom")
+      
+    } else if (type == "platform") {
+      
+      donut_data <- 
+        tibble(Assay = proteins) |> 
+        left_join(olink_targets |> 
+                    mutate(Platform = case_when(Platform == "HT" ~ "Olink Explore HT",
+                                                Platform == "3K" ~ "Olink Explore 3072",
+                                                Platform == "1.5K" ~ "Olink Explore 1463")), by = "Assay") |> 
+        count(Platform) |> 
+        mutate(percentage = n / sum(n) * 100, 
+               label = paste0(Platform, " (", n, ")"))  
+      
+      # Donut plot
+      donut_data |> 
+        ggplot(aes(x = 2, y = n, fill = Platform)) + 
+        geom_bar(stat = "identity", width = 1, color = "white", show.legend = legend) +  
+        coord_polar(theta = "y") +  
+        xlim(1, 2.5) +  
+        theme_void() +
+        theme(legend.position = "none") +
+        scale_fill_manual(values = pal_platforms) +
+        geom_text(aes(label = ifelse(n > 25, n, "")),  
+                  position = position_stack(vjust = 0.5),  
+                  color = "white", size = 4) +
+        theme(legend.position = "bottom")
+      
+    } else if (type == "concentration") {
+      
+      
+      donut_data <- 
+        tibble(Assay = proteins) |> 
+        left_join(concentrations, by = c("Assay" = "Gene")) |> 
+        count(unit) |> 
+        mutate(percentage = n / sum(n) * 100, 
+               label = paste0(unit, " (", n, ")"))  
+      
+      # Donut plot
+      donut_data |> 
+        ggplot(aes(x = 2, y = n, fill = unit)) + 
+        geom_bar(stat = "identity", width = 1, color = "white") +  
+        coord_polar(theta = "y") +  
+        xlim(1, 2.5) +  
+        theme_void() +
+        theme(legend.position = "none") +
+       # scale_fill_brewer() +
+#        scale_fill_manual(values = pal_platforms) +
+        geom_text(aes(label = ifelse(n > 25, n, "")),  
+                  position = position_stack(vjust = 0.5),  
+                  color = "white", size = 4) +
+        theme(legend.position = "bottom")
+      
+      
+    }else if (type == "protein class") {
+      
+     donut_data <- 
+        tibble(Assay = proteins) |> 
+        left_join(secretome_hpa |> 
+                    select(Gene, `Protein class`), by = c("Assay" = "Gene")) |> 
+        separate_longer_delim(`Protein class`, delim = ", ") |> 
+        count(`Protein class`) |> 
+        mutate(percentage = n / sum(n) * 100, 
+               label = paste0(`Protein class`, " (", n, ")"))  
+      
+      # Donut plot
+      donut_data |> 
+        ggplot(aes(x = 2, y = n, fill = `Protein class`)) + 
+        geom_bar(stat = "identity", width = 1, color = "white", show.legend = legend) +  
+        coord_polar(theta = "y") +  
+        xlim(1, 2.5) +  
+        theme_void() +
+        theme(legend.position = "none") +
+      #  scale_fill_manual(values = c(pal_secreted, "Not secreted" = "grey80")) +
+        geom_text(aes(label = ifelse(n > 25, n, "")),  
+                  position = position_stack(vjust = 0.5),  
+                  color = "white", size = 4) +
+        theme(legend.position = "bottom")
+      
+      
+    } else if (type == "block") {
+      
+      donut_data <- 
+        tibble(Assay = proteins) |> 
+        left_join(ht_blocks, by = "Assay") |> 
+        count(Block) |> 
+        mutate(percentage = n / sum(n) * 100, 
+               label = paste0(Block, " (", n, ")"))  
+      
+      # Donut plot
+      donut_data |> 
+        mutate(Block = as.factor(Block)) |> 
+        ggplot(aes(x = 2, y = n, fill = Block)) + 
+        geom_bar(stat = "identity", width = 1, color = "white", show.legend = legend) +  
+        coord_polar(theta = "y") +  
+        xlim(1, 2.5) +  
+        theme_void() +
+        theme(legend.position = "none") +
+        scale_fill_brewer() +
+        geom_text(aes(label = ifelse(n > 25, n, "")),  
+                  position = position_stack(vjust = 0.5),  
+                  color = "black", size = 4) +
+        theme(legend.position = "bottom")
+      
+      
+    } else {
+      warning("Type not recognized")
+    }
+   
     
     
   }
