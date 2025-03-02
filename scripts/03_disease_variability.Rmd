@@ -1,0 +1,861 @@
+---
+title: "03_age_profiling"
+output: html_document
+autor: "María Bueno Álvez"
+date: "2024-12-13"
+editor_options: 
+  chunk_output_type: console
+---
+
+# Set up
+
+```{r}
+source("scripts/functions/functions_analyses.R")
+source("scripts/functions/functions_utility.R")
+source("scripts/functions/functions_visualization.R")
+source("scripts/functions/themes_palettes.R")
+
+# Read in data
+data_disease <- read_tsv("data/data_phase1_pandisease_curated_20250226.tsv")
+meta_disease <- read_tsv("data/meta_phase1_pandisease_20250226.tsv")
+
+data_disease_wide <- 
+  data_disease |> 
+  pivot_wider(names_from = Assay, 
+              values_from = NPX) 
+```
+
+
+# ANOVA
+
+```{r}
+# Apply the function to each protein group
+data_anova <- 
+  data_disease |> 
+  select(DAid, Assay, NPX) %>%
+  left_join(meta_disease |> 
+              select(DAid, Disease, Age, Sex, BMI), by = "DAid") |> 
+  mutate(BMI = ifelse(BMI == 0, NA, BMI))
+
+# Test the function on one protein
+anova_res <- 
+  map_df(unique(data_disease$Assay), function(protein) {
+    
+    do_anova(df = data_anova, 
+             protein = protein)
+    
+  })
+
+saveRDS(anova_res, savepath_data("ANOVA", "anova_wellness.rds"))
+write_excel_csv(anova_res, savepath_data("Supplementary-files", "Data_S5.csv"))
+
+anova_res |> 
+  filter(term == "Disease",
+         p.value < 0.05) 
+```
+
+
+## Visualize
+
+```{r}
+
+dat <- 
+  anova_res |> 
+  group_by(Protein) |> 
+  filter(term != "Residuals") |> 
+  mutate(Total_variance = sum(Eta2_perc)) |> 
+  arrange(-Total_variance) 
+
+top_variance <- 
+  dat |> 
+  filter(Total_variance > 40) |> 
+  distinct(Protein) |> 
+  pull()
+
+dat |> 
+  #filter(Protein %in% top_variance) |>
+  ggplot(aes(x = reorder(Protein, -Total_variance), y = Eta2_perc, fill = term)) +
+  geom_col() +
+    geom_vline(xintercept = 40, color = "grey", linetype = "dashed", size = 0.5) +
+
+  theme_hpa(angled = T, axis_x = F) +
+  scale_fill_manual(values = pal_anova_wellness) +
+  ylab("% of variance explained") +
+  xlab("") 
+
+
+ggsave(savepath("anova_DA.pdf"), h = 4, w = 13)
+ggsave(savepath("anova_DA.png"), h = 4, w = 13)
+
+# Top proteins
+dat |> 
+  filter(Protein %in% top_variance) |>
+  ggplot(aes(x = reorder(Protein, -Total_variance), y = Eta2_perc, fill = term)) +
+  geom_col(show.legend = F) +
+  theme_hpa(angled = T) +
+  scale_fill_manual(values = pal_anova) +
+  ylab("% of variance explained") +
+  xlab("") 
+
+ggsave(savepath("anova_DA_top.pdf"), h = 5, w = 15)
+ggsave(savepath("anova_DA_top.png"), h = 5, w = 15)
+
+
+#Top protein for age, sex, BMI
+p1 <- 
+  resource_data |> 
+  filter(Assay == "CGA") |> 
+  left_join(resource_meta |> 
+              select(DAid, Sex, Class), by = "DAid") |> 
+  filter(!is.na(Sex)) |> 
+  mutate(Sex = case_when(Sex == "M" ~ "Male",
+                         Sex == "F" ~ "Female")) |> 
+  ggplot(aes(Sex, NPX, color = Class, fill = Class)) +
+  geom_quasirandom(alpha = 0.6, show.legend = F) +
+  geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
+ # geom_text(aes(label = "adj p-value = 1.16e-297")) +
+  scale_color_manual(values = pal_class) +
+  scale_fill_manual(values = pal_class) +
+  theme_hpa() +
+  ggtitle("CGA") 
+
+p2 <- 
+  resource_data |> 
+  filter(Assay == "EDA2R") |> 
+  left_join(resource_meta |> 
+              select(DAid, Age, Class), by = "DAid") |> 
+  filter(!is.na(Age)) |> 
+  ggplot(aes(Age, NPX, color = Class)) +
+  geom_point(show.legend = F) +
+  geom_smooth(color = "grey20") +
+  scale_color_manual(values = pal_class) +
+  theme_hpa() +
+  ggtitle("EDA2R")
+  
+p3 <- 
+  resource_data |> 
+  filter(Assay == "LEP") |> 
+  left_join(resource_meta |> 
+              select(DAid, BMI, Class), by = "DAid") |> 
+  filter(!is.na(BMI),
+         BMI != 0) |> 
+  ggplot(aes(BMI, NPX, color = Class)) +
+  geom_point(show.legend = F) +
+  geom_smooth(color = "grey20") +
+  scale_color_manual(values = pal_class) +
+  theme_hpa() +
+  ggtitle("LEP")
+
+p1 / p2 / p3
+
+ggsave(savepath("age_sex_bmi_prots.pdf"), h = 13, w = 3.5)
+
+
+dat |>  
+  group_by(term) |>  
+  top_n(15, Eta2_perc) |>  
+  filter(term != "Disease") |>  
+  mutate(term = factor(term, levels = c("Sex", "Age", "BMI")),
+         Protein = reorder_within(Protein, Eta2_perc, term)) |>  # Reorder within each term
+  ggplot(aes(Protein, Eta2_perc, color = term)) +  # Change fill to color for lines
+  geom_segment(aes(xend = Protein, yend = 0), size = 1) +  # Lollipop stem
+  geom_point(size = 3, aes(fill = term), shape = 21) +  # Lollipop head
+  facet_wrap(~term, scales = "free", ncol = 1) +  
+  scale_color_manual(values = pal_anova) +  # Color for the stems
+  scale_fill_manual(values = pal_anova) +  # Fill for the points
+  scale_x_reordered() +  # Apply reordering to x-axis
+  xlab("") +  
+  theme_hpa(angled = T) +  
+  coord_flip() +
+  theme(panel.spacing = unit(1.5, "lines"))
+
+ggsave(savepath("age_sex_bmi_top_prots_lollipop.pdf"), w = 3.5, h = 11)
+
+
+
+```
+
+# Machine learning
+
+## Generate initial splits
+
+### Age
+
+```{r}
+age_data <- 
+  data_disease_wide |> 
+  left_join(meta_disease |> 
+              select(DAid, Age), by = "DAid") |> 
+  filter(!is.na(Age),
+         Age >=2)
+
+age_ml_split <- 
+  generate_split(data = age_data, 
+                 proportion = 0.8,
+                 variable_stratify = "Age")
+
+saveRDS(age_ml_split, "server-scripts/data/age_ml_split.rds")
+```
+
+### Sex
+
+```{r}
+sex_data <- 
+  data_disease_wide |> 
+  left_join(meta_disease |> 
+              select(DAid, Sex), by = "DAid") |> 
+  filter(!is.na(Sex))
+
+sex_ml_split <- 
+  generate_split(data = sex_data, 
+                 proportion = 0.8,
+                 variable_stratify = "Sex")
+
+saveRDS(sex_ml_split, "server-scripts/data/sex_ml_split.rds")
+```
+
+### BMI
+
+```{r}
+bmi_data <- 
+  data_disease_wide |> 
+  left_join(meta_disease |> 
+              select(DAid, BMI), by = "DAid") |> 
+  filter(!is.na(BMI),
+         BMI != 0)
+
+bmi_ml_split <- 
+  generate_split(data = bmi_data, 
+                 proportion = 0.8,
+                 variable_stratify = "BMI")
+
+saveRDS(bmi_ml_split, "server-scripts/data/bmi_ml_split.rds")
+```
+
+
+## Load results from seed analyes (HPC)
+
+```{r}
+protein_importance_age <- read_tsv("parsed-results/importances_Age.tsv")
+protein_importance_sex <- read_tsv("parsed-results/importances_Sex.tsv")
+protein_importance_bmi <- read_tsv("parsed-results/importances_BMI.tsv")
+
+predictions_age <- read_tsv("parsed-results/predictions_Age.tsv")
+predictions_sex <- read_tsv("parsed-results/predictions_Sex.tsv")
+predictions_bmi <- read_tsv("parsed-results/predictions_BMI.tsv")
+```
+
+## Results summary 
+
+```{r}
+
+# Number of features
+p1 <- 
+  protein_importance_sex |>
+  count(Seed) |>
+  ggplot(aes(n)) +
+  #geom_histogram()
+  geom_density(color = "grey20",
+               fill = pal_age_sex_bmi["Sex"]) +
+  geom_vline(
+    aes(xintercept = median(n)),
+    color = "grey",
+    linetype = "dashed",
+    size = 0.6
+  ) +
+theme_hpa() +
+  ggtitle("Sex") 
+
+p2 <-   
+ protein_importance_age |>
+  count(Seed) |>
+  ggplot(aes(n)) +
+  #geom_histogram()
+  geom_density(color = "grey20",
+               fill = pal_age_sex_bmi["Age"]) +
+  geom_vline(
+    aes(xintercept = median(n)),
+    color = "grey",
+    linetype = "dashed",
+    size = 0.6
+  ) +
+theme_hpa() +
+  ggtitle("Age") 
+
+p3 <-   
+  protein_importance_bmi |>
+  count(Seed) |>
+  ggplot(aes(n)) +
+  #geom_histogram()
+  geom_density(color = "grey20",
+               fill = pal_age_sex_bmi["BMI"]) +
+  geom_vline(
+    aes(xintercept = median(n)),
+    color = "grey",
+    linetype = "dashed",
+    size = 0.6
+  ) +
+theme_hpa() +
+  ggtitle("BMI") 
+  
+
+p_density <- p1 | p2 | p3
+
+# Number of times
+#p1 <- 
+  protein_importance_sex |> 
+  filter(Importance > 0) |> 
+  count(Variable) |> 
+  ggplot(aes(n)) +
+  geom_histogram(fill = pal_age_sex_bmi["Sex"]) +
+  theme_hpa() +
+  theme_hpa() +
+  ylab("Number of proteins") +
+  xlab("Number of times selected") +
+  ggtitle("Sex")
+
+
+p2 <- 
+  protein_importance_age |> 
+  count(term) |> 
+  ggplot(aes(n)) +
+  geom_histogram(fill = pal_age_sex_bmi["Age"]) +
+  theme_hpa() +
+  theme_hpa() +
+  ylab("Number of proteins") +
+  xlab("Number of times selected") +
+  ggtitle("Age")
+
+p3 <- 
+  protein_importance_bmi |> 
+  count(term) |> 
+  ggplot(aes(n)) +
+  geom_histogram(fill = pal_age_sex_bmi["BMI"]) +
+  theme_hpa() +
+  ylab("Number of proteins") +
+  xlab("Number of times selected") +
+  ggtitle("BMI")
+
+p_times <- p1 | p2 | p3
+
+# Importance
+dat_sex <- 
+  ml_sex$protein_importance |> 
+  group_by(term) |> 
+  summarise(abs_estimate = mean(abs(estimate))) |> 
+  arrange(-abs_estimate)  |> 
+  left_join( ml_sex$protein_importance |>
+               count(term), by = "term") |> 
+  mutate(Type = "Sex") 
+
+p1 <- 
+  dat_sex |> 
+  ggplot(aes(abs_estimate, n)) +
+  geom_point(color = pal_age_sex_bmi["Sex"]) +
+  geom_text_repel(data = filter(dat_sex, abs_estimate > 0.5),
+                  aes(label = term), size = 3) +
+  theme_hpa() +
+  ggtitle("Sex")
+
+dat_age <- 
+  ml_age$protein_importance |> 
+  group_by(term) |> 
+  summarise(abs_estimate = mean(abs(estimate))) |> 
+  arrange(-abs_estimate)  |> 
+  left_join(ml_age$protein_importance |>
+               count(term), by = "term") |> 
+  mutate(Type = "Age") 
+
+p2 <- 
+  dat_age |> 
+  ggplot(aes(abs_estimate, n)) +
+  geom_point(color = pal_age_sex_bmi["Age"]) +
+  geom_text_repel(data = filter(dat_age, abs_estimate > 0.5),
+                  aes(label = term), size = 3) +
+  theme_hpa() +
+  ggtitle("Age")
+
+
+dat_bmi <- 
+  ml_bmi$protein_importance |> 
+  group_by(term) |> 
+  summarise(abs_estimate = mean(abs(estimate))) |> 
+  arrange(-abs_estimate)  |> 
+  left_join(ml_bmi$protein_importance |>
+               count(term), by = "term") |> 
+  mutate(Type = "BMI") 
+
+p3 <- 
+  dat_bmi |> 
+  ggplot(aes(abs_estimate, n)) +
+  geom_point(color = pal_age_sex_bmi["BMI"]) +
+  geom_text_repel(data = filter(dat_bmi, abs_estimate > 0.5),
+                  aes(label = term), size = 3) +
+  theme_hpa() +
+  ggtitle("BMI")
+
+p_times_importance <- p1 | p2 | p3
+
+p_density / p_times / p_times_importance
+ggsave(savepath("ml_age_sex_bmi_summary.pdf"), h = 10, w = 10)
+```
+
+
+## Top 25
+
+```{r}
+
+top_proteins <- 
+  protein_importance_bmi |> 
+  filter(Importance > 0) |> 
+  group_by(Variable) |> 
+  summarise(abs_estimate = mean(Importance),
+            n = n_distinct(Seed)) |> 
+  arrange(-n) |> 
+  head(20)
+  
+  protein_importance_bmi |> 
+    filter(Variable %in% top_proteins$Variable) |> 
+    mutate(Variable = factor(Variable, levels = rev(top_proteins$Variable))) |> 
+    ggplot(aes(fct_reorder(Variable, abs(Importance)), abs(Importance))) +
+    geom_quasirandom(size = 0.5) +
+    geom_boxplot(alpha = 0.5, outlier.color = NA) +
+    coord_flip() +
+    xlab("")  +
+    ylab("") +
+    theme_hpa() 
+
+top_sex <- 
+  plot_top_proteins_seed(protein_importance =  protein_importance_sex |> rename(term = Variable, estimate = Importance, seed = Seed),
+                       plot_color = pal_age_sex_bmi[["Sex"]],
+                       n = 25) +
+ # ggtitle("Top proteins - sex") +
+  xlab("")
+
+top_age <- 
+  plot_top_proteins_seed(protein_importance =  ml_age$protein_importance,
+                       plot_color = pal_age_sex_bmi[["Age"]],
+                       n = 25)+
+ # ggtitle("Top proteins - age") +
+  xlab("")
+
+top_bmi <- 
+  plot_top_proteins_seed(protein_importance =  ml_bmi$protein_importance,
+                        plot_color = pal_age_sex_bmi[["BMI"]],
+                       n = 25)
+#  ggtitle("Top proteins - BMI")
+
+
+top_sex | top_age | top_bmi
+ggsave(savepath("top_proteins.pdf"), h = 6, w = 10)
+
+# NEw pal
+top_sex <- 
+  plot_top_proteins_seed(protein_importance =  ml_sex$protein_importance,
+                       plot_color = pal_anova[["Sex"]],
+                       n = 15) 
+
+top_age <- 
+  plot_top_proteins_seed(protein_importance =  ml_age$protein_importance,
+                       plot_color = pal_anova[["Age"]],
+                       n = 15) 
+
+top_bmi <- 
+  plot_top_proteins_seed(protein_importance =  ml_bmi$protein_importance,
+                        plot_color = pal_anova[["BMI"]],
+                        n = 15) +
+  ylab("abs(estimate)")
+
+
+top_sex / top_age / top_bmi
+ggsave(savepath("top_proteins.pdf"), h = 13, w = 3.5)
+```
+
+
+## Performance
+
+```{r}
+
+# Within-testing set - discrete(sex)
+ml_age$performance |>
+  filter(.metric == "rsq") |> 
+  mutate(Type = "Age") |> 
+  bind_rows(ml_bmi$performance |>
+  filter(.metric == "rsq") |> 
+  mutate(Type = "BMI")) |> 
+  bind_rows(ml_sex$performance |>
+  mutate(Type = "Sex")) |>
+  mutate(Type = factor(Type, levels = c("Sex", "Age", "BMI"))) |> 
+  ggplot(aes(Type, .estimate, color = Type, fill = Type)) +
+  geom_quasirandom() +
+  geom_boxplot(alpha = 0.5,
+               color = "grey40",
+               outlier.color = NA) +
+  scale_color_manual(values = pal_age_sex_bmi) +
+  scale_fill_manual(values = pal_age_sex_bmi) + 
+  theme_hpa() +
+  ggtitle("Performance across seeds")
+
+ggsave(savepath("performance_age_sex_bmi.png"), h = 8, w = 8)
+
+```
+
+
+# Build final models (25 proteins)
+
+## Sex model
+
+```{r}
+sex_proteins <- 
+  ml_sex$protein_importance |> 
+  group_by(term) |> 
+  summarise(abs_estimate = mean(abs(estimate))) |> 
+  arrange(-abs_estimate) |> 
+  head(25)
+
+sex_train <- 
+  sex_ml_split$data_train 
+  
+sex_test <- 
+  sex_ml_split$data_test
+
+sex_prediction <-  
+  discrete_prediction(split_train = sex_train,
+                      split_test = sex_test,
+                      variable_predict = "Sex",
+                      variable_case = "F")  
+
+#saveRDS(sex_prediction, savepath_data("ML", "sex_model.rds"))
+
+#sex_prediction <- readRDS(savepath_data("ML", "sex_model.rds"))
+
+sex_prediction$important_proteins |> filter(estimate != 0)
+
+sex_prediction$predictions
+
+AUC <- 
+  sex_prediction$performance |> 
+  filter(.metric == "roc_auc") |> 
+  pull(.estimate) |> 
+  round(2)
+
+predictions_sex <- 
+  sex_prediction$predictions |> 
+  ggplot(aes(Variable, .pred_0_F, color = Variable)) +
+  geom_violin(alpha = 0.8, show.legend = F) +
+  geom_quasirandom(show.legend = F) +
+  stat_summary(fun = "median",
+                 geom = "crossbar", 
+                 width = 0.2,
+                 colour = "grey20",
+                 show.legend = F) +
+  theme_hpa() +
+  scale_color_manual(values = unname(pal_sex)) + 
+  scale_fill_manual(values = unname(pal_sex)) + 
+  ggtitle(paste0("Sex - AUC: ", AUC))
+
+#ggsave(savepath("sex_prediction.png"), h = 6, w = 6)
+
+```
+
+
+## Age model
+
+```{r}
+age_proteins <- 
+  ml_age$protein_importance |> 
+  group_by(term) |> 
+  summarise(abs_estimate = mean(abs(estimate))) |> 
+  arrange(-abs_estimate) |> 
+  head(25)
+
+age_train <- 
+  age_ml_split$data_train 
+  
+age_test <- 
+  age_ml_split$data_test
+
+age_prediction <-  
+  continuous_prediction(split_train = age_train,
+                        split_test = age_test,
+                        variable_predict = "Age")  
+
+saveRDS(age_prediction, savepath_data("ML", "age_model.rds"))
+
+#age_prediction$important_proteins |> filter(estimate != 0)
+
+R2 <- 
+  age_prediction$performance |> 
+  filter(.metric == "rsq") |> 
+  pull(.estimate) |> 
+  round(2)
+
+predictions_age <- 
+  age_prediction$predictions |> 
+  mutate(offset = Variable - .pred) |> 
+  ggplot(aes(Variable, .pred, color = offset)) +
+  geom_point() +
+  geom_abline(x = y, lty = "dashed") +
+  geom_text(aes(label = paste0("R2 = ", R2), 
+                x = 75,
+                y = 0.25), inherit.aes = F) +
+  scale_colour_gradient2() +
+  theme_hpa() +
+  ggtitle("Age")
+
+#ggsave(savepath("age_prediction.png"), h = 6, w = 6)
+
+
+```
+
+## BMI model
+
+```{r}
+bmi_proteins <- 
+  ml_bmi$protein_importance |> 
+  group_by(term) |> 
+  summarise(abs_estimate = mean(abs(estimate))) |> 
+  arrange(-abs_estimate) |> 
+  head(25)
+
+bmi_train <- 
+  bmi_ml_split$data_train 
+  
+bmi_test <- 
+  bmi_ml_split$data_test
+
+bmi_prediction <-  
+  continuous_prediction(split_train = bmi_train,
+                        split_test = bmi_test,
+                        variable_predict = "BMI")  
+
+saveRDS(bmi_prediction, savepath_data("ML", "bmi_model.rds"))
+
+
+bmi_prediction$important_proteins |> filter(estimate != 0)
+
+R2 <- 
+  bmi_prediction$performance |> 
+  filter(.metric == "rsq") |> 
+  pull(.estimate) |> 
+  round(2)
+
+predictions_bmi <- 
+  bmi_prediction$predictions |> 
+  mutate(offset = Variable - .pred) |> 
+  ggplot(aes(Variable, .pred, color = offset)) +
+  geom_point() +
+  geom_abline(x = y, lty = "dashed") +
+  geom_text(aes(label = paste0("R2 = ", R2), 
+                x = 40,
+                y = 20), inherit.aes = F) +
+  scale_colour_gradient2() +
+  theme_hpa() +
+  ggtitle("BMI")
+
+ggsave(savepath("bmi_prediction.png"), h = 6, w = 6)
+
+```
+
+## Performance
+
+
+```{r}
+
+predictions_sex  | predictions_age | predictions_bmi 
+
+
+ggsave(savepath("predictions_age_sex_bmi.png"), h = 5 , w = 14)
+
+```
+
+# Compare
+
+```{r}
+
+ml_res_summary <- 
+  ml_sex$protein_importance |> 
+  group_by(term) |> 
+  summarise(abs_estimate = mean(abs(estimate))) |> 
+  mutate(Variable = "Sex") |> 
+  bind_rows(ml_age$protein_importance |> 
+              group_by(term) |> 
+              summarise(abs_estimate = mean(abs(estimate)))|> 
+              mutate(Variable = "Age")) |> 
+  bind_rows(ml_bmi$protein_importance |> 
+              group_by(term) |> 
+              summarise(abs_estimate = mean(abs(estimate)))|> 
+              mutate(Variable = "BMI")) |> 
+  rename(Protein = term)
+
+
+anova_res_summary <- 
+  anova_all_proteins |> 
+  filter(!term %in% c("Disease", "Residuals")) |> 
+  select(Protein, Variable = term, Eta2_perc)
+
+ml_res_summary |> 
+  left_join(anova_res_summary, by = c("Protein", "Variable")) |> 
+  mutate(Variable = factor(Variable, levels = c("Sex", "Age", "BMI"))) |> 
+  ggplot(aes(abs_estimate, Eta2_perc, color = Variable)) +
+  geom_point() +
+  geom_text_repel(aes(label = Protein)) +
+  scale_color_manual(values = pal_anova) +
+  facet_wrap(~Variable, nrow = 1, scales = "free") +
+  theme_hpa()
+
+ggsave(savepath("comparison_age_sex_bmi.pdf"), h = 7, w = 14)  
+
+```
+
+
+
+# Check age proteins
+
+## Import age proteins
+
+```{r}
+age_clock <- 
+  import_df("data/age_markers/proteomics_clock.xlsx")
+age20 <- 
+  import_df("data/age_markers/protage_20_clock.xlsx")
+```
+
+## Top 10 in disease atlas
+
+```{r}
+resource_data |> 
+  filter(Assay %in% age20$Gene_name) |> 
+  left_join(resource_meta |> 
+              select(DAid, Age, Class), by = "DAid") |> 
+  mutate(Assay = factor(Assay, levels = age20$Gene_name)) |> 
+  ggplot(aes(Age, NPX, color = Class)) +
+  geom_point(size = 0.5) +
+#  geom_smooth() +
+  facet_wrap(~Assay, scales = "free_y") +
+  scale_color_manual(values = pal_class) +
+  theme_hpa()
+
+ggsave(savepath("age20_disease_atlas.png"), h = 6, w = 8)
+```
+
+# Examples
+
+```{r}
+p1 <- 
+  resource_data |> 
+  filter(Assay == "CXCL17") |> 
+  left_join(resource_meta |> 
+              select(DAid, Age, Class), by = "DAid") |> 
+  ggplot(aes(Age, NPX, color = Class)) +
+  geom_point(size = 0.5, show.legend = F) +
+  geom_smooth(color = "black") +
+  scale_color_manual(values = pal_class) +
+  theme_hpa() 
+  
+p2 <- 
+  resource_data |> 
+  filter(Assay == "COL9A1") |> 
+  left_join(resource_meta |> 
+              select(DAid, Age, Class), by = "DAid") |> 
+  ggplot(aes(Age, NPX, color = Class)) +
+  geom_point(size = 0.5, show.legend = F) +
+  geom_smooth(color = "black") +
+  scale_color_manual(values = pal_class) +
+  theme_hpa()
+
+p1 + p2
+
+
+ggsave(savepath("examples_age.pdf"), h = 4, w = 8)
+```
+
+
+## Overlap between lists
+
+```{r}
+#age_clock
+#age20
+age_importances <- 
+  ml_age$protein_importance |> 
+  group_by(term) |> 
+  summarise(abs_estimate = mean(abs(estimate)),
+            n = n_distinct(seed)) |> 
+  arrange(-abs_estimate) |> 
+  filter(n > 90, 
+         abs_estimate > 0.2) 
+
+y <- list("Age clock" = age_clock$Gene_name,
+          "Age clock - 20" = age20$Gene_name,
+          "ML" = age_importances$term)
+plot(euler(y, shape = "ellipse"), quantities = T, fills = c("#D0E4EE","grey50", pal_anova["Age"])) |> as.ggplot() 
+
+ggsave(savepath("overlap_age.png"), h = 3, w = 3)
+
+
+top_proteins <- 
+    ml_age$protein_importance|> 
+    group_by(term) |> 
+    summarise(abs_estimate = mean(abs(estimate)),
+              n = n_distinct(seed)) |> 
+    arrange(-abs_estimate) |> 
+    head(50)
+  
+ml_age$protein_importance |> 
+  filter(term %in% top_proteins$term) |> 
+  mutate(term = factor(term, levels = rev(top_proteins$term)),
+         Class = case_when(term %in% age20$Gene_name ~ "Argentieri_clock_20",
+                           term %in% age_clock$Gene_name & !term %in% age20$Gene_name ~ "Argentieri_clock_extended",
+                           T ~ "ML")) |> 
+  ggplot(aes(fct_reorder(term, abs(estimate)), abs(estimate), color = Class, fill = Class)) +
+  geom_quasirandom(size = 0.5, show.legend = F) +
+  geom_boxplot(alpha = 0.5, outlier.color = NA, show.legend = F) +
+  scale_color_manual(values = c("Argentieri_clock_extended" = "#D0E4EE","Argentieri_clock_20" = "grey50", "ML" = pal_anova[["Age"]])) +
+  scale_fill_manual(values = c("Argentieri_clock_extended" = "#D0E4EE","Argentieri_clock_20" = "grey50", "ML" = pal_anova[["Age"]])) +
+  coord_flip() +
+  xlab("")  +
+  ylab("") +
+  theme_hpa() 
+
+ggsave(savepath("top50_age.pdf"), h = 10, w = 4)
+ggsave(savepath("top50_age.pdf"), h = 10, w = 8)
+```
+
+
+```{r}
+top_proteins <- 
+  ml_age$protein_importance |> 
+  group_by(term) |> 
+  summarise(abs_estimate = mean(abs(estimate))) |> 
+  arrange(-abs_estimate) |> 
+  head(50)
+
+ml_age$protein_importance  |> 
+  filter(term %in% top_proteins$term) |> 
+  mutate(term = factor(term, levels = rev(top_proteins$term)),
+         Age_clock = ifelse(term %in% age_clock$Gene_name, "Yes", "No")) |> 
+  ggplot(aes(term, abs(estimate), color = Age_clock, fill = Age_clock)) +
+  geom_quasirandom(size = 0.5) +
+  geom_boxplot(alpha = 0.5, outlier.color = NA) +
+  coord_flip() +
+  scale_color_manual(values = rev(c("#0077b6", "grey"))) +
+  scale_fill_manual(values = rev(c("#0077b6", "grey"))) +
+  theme_hpa()
+
+ggsave(savepath("age_proteins_clock.pdf"), h = 10, w = 6)
+
+
+
+p1 <- 
+  plot_boxplot(proteins = c("CXCL17", "LTBP2"),
+             type = "age") +
+  ggtitle("In age clock") 
+p2 <- 
+  plot_boxplot(proteins = c("CCL27", "ART3"),
+               type = "age") +
+  ggtitle("Not in age clock")
+
+p1/p2
+ggsave(savepath("age_proteins.png"), h = 10, w = 10)
+
+```
