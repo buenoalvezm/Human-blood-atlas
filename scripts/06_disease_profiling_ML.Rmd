@@ -71,8 +71,8 @@ disease_class_order_ml <-
 
 ```{r}
 ml_data <- 
-  resource_data |>
-  left_join(resource_meta |> 
+  data_disease |>
+  left_join(meta_disease |> 
               select(DAid, Disease, Class), by = "DAid") |> 
   filter(Disease %in% c(include_diseases, "Healthy")) |> 
   select(DAid, Disease, Assay, NPX) |> 
@@ -88,7 +88,7 @@ random_splits <-
                                     variable_stratify = "Disease",
                                     seed = seed))
 
-#saveRDS(random_splits, savepath_data("splits", "random_splits.rds"))
+saveRDS(random_splits, "server-scripts/data/random_splits.rds")
 ```
 
 ## Read results from cluster 

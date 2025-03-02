@@ -194,7 +194,6 @@ ggsave(savepath_results("Manuscript-figures", "Fig1_correlation_diseases_scaled.
 ## Cohort info
 
 ```{r}
-
 cohort_info <- 
   meta_disease |> 
   summarise(
@@ -210,7 +209,7 @@ cohort_info <-
   arrange(Disease)
 
   
-write_excel_csv(cohort_info, savepath_data("Supplementary-files", "Data_S4.xlsx"))
+write_excel_csv(cohort_info, savepath_data("Supplementary-files", "Data_S4.csv"))
 ```
  
 # Case-control
