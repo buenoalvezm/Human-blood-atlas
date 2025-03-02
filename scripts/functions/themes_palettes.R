@@ -7,6 +7,15 @@ pal_detectability <- c("None" = "#FF7176",
                        "Some: > 50%" = "#AFB8B4",
                        "All" = "#174A45")
 
+pal_wellness_individuals <- colorRampPalette(brewer.pal(12, "Paired"))(96)
+
+
+pal_anova <- c("Age" = "#75C8AE",    
+               "Sex" = "#EB7C6A", 
+               "BMI" = "#F7B84D",    
+               "Disease" = "#EEE2D1")    
+
+
 pal_anova_wellness <-  c("age" = "#75C8AE",    
                          "sex" = "#EB7C6A", 
                          "visit" = "#E6F0AB",    
@@ -66,10 +75,11 @@ getPalette3 = colorRampPalette(brewer.pal(8, "Set2"))
 pal_class<-getPalette3(8)
 names(pal_class)<-c("Psychiatric","Cardiovascular","Cancer","Autoimmune","Pediatric","Infection","Metabolic","Healthy") 
 
+
 pal_platforms <- 
-  c("HT" = "#D69DCA",
-    "3K" = "#D6EDDA", 
-    "1.5K" = "#A7C7E7")
+  c("Olink Explore HT" = "#D69DCA",
+    "Olink Explore 3072" = "#B2D1B8", 
+    "Olink Explore 1463" = "#A7C7E7")
 
 pal_binary <- 
   c("Yes" = "red",
