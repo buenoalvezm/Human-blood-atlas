@@ -85,6 +85,13 @@ pal_binary <-
   c("Yes" = "red",
     "No" = "grey")
 
+
+
+
+pal_secretome_condensed <- c("Actively secreted to blood" = "#B30000", 
+                             "Secreted to other locations" = "#F7A391", 
+                             "Not secreted" = "grey80")
+
 pal_secreted <- c("Secreted to blood" = "#B30000", 
                   "Secreted in brain" = "#FFDD00", 
                   "Secreted to digestive system" = "#1280C4", 
