@@ -1,10 +1,10 @@
 
 # Pan-Disease Blood Proteome Profiling
 
-![GitHub top language](https://img.shields.io/github/languages/top/buenoalvezm/Pan-disease-profiling)
+![GitHub top language](https://img.shields.io/github/languages/top/buenoalvezm/Human-blood-atlas)
 ![License](https://img.shields.io/badge/license-Apache2.0-yellow)
-![GitHub last commit](https://img.shields.io/github/last-commit/buenoalvezm/Pan-disease-profiling)
-![GitHub issues](https://img.shields.io/github/issues/buenoalvezm/Pan-disease-profiling)
+![GitHub last commit](https://img.shields.io/github/last-commit/buenoalvezm/Human-blood-atlas)
+![GitHub issues](https://img.shields.io/github/issues/buenoalvezm/Human-blood-atlas)
 
 ## Table of Contents
 
