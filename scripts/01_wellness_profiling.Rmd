@@ -27,20 +27,10 @@ ht_blocks <- read_tsv("data/other/ht_assay_block.tsv")
 # Wellness overview
 
 ```{r}
-
-plot_id <- 
-  subject_order |> 
-  ungroup() |> 
-  mutate(Subject = factor(Subject, levels = subject_order$Subject)) |>
-  mutate(rank = rank(-n, ties.method = "first"),
-         y = 1) |> 
-  ggplot(aes(y, Subject, fill = Subject)) +
-  geom_tile(color = "white", show.legend = F) +
-  scale_fill_manual(values = pal_wellness_individuals) +
-  theme_hpa(axis_x = F) +
-  coord_fixed() +
-  theme(axis.ticks.y = element_blank(),
-        axis.text.y = element_blank())
+order_wellness <- 
+  meta_wellness |> 
+  filter(Visit == 1) |> 
+  arrange(Date)
 
 visit_ranges <- 
   meta_wellness %>%
@@ -50,9 +40,9 @@ visit_ranges <-
 
 plot_wellness <- 
   meta_wellness |> 
-  mutate(Subject = factor(Subject, levels = wellness_ids),
+  mutate(Subject = factor(Subject, levels = order_wellness$Subject),
          Visit = as.factor(Visit)) |>
-  ggplot(aes(Date, Subject, color = Visit, group = Subject)) +
+  ggplot(aes(Date, Subject, color = Visit)) +
   geom_rect(data = visit_ranges,
             aes(xmin = start_date, xmax = end_date, ymin = -Inf, ymax = Inf, fill = Visit),
             alpha = 0.3, inherit.aes = FALSE) +
@@ -61,14 +51,14 @@ plot_wellness <-
   # scale_color_manual(values = pal_wellness_individuals) +
   scale_fill_viridis_d(option = "viridis", direction = -1) +
   scale_color_viridis_d(option = "viridis", direction = -1) +
-  theme_hpa(axis_y = F) +
-  xlab("Sample date")
+  theme_hpa(axis_y = T) +
+  xlab("Sample date") +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank())
 
-plot_id | plot_wellness  
-
-  ggsave(savepath("wellness_visit_timeline.pdf"), width = 10, height = 5)
-
- ```
+plot_wellness
+#ggsave(savepath("wellness_visit_timeline.pdf"), width = 9, height = 5)
+```
 
 # LOD
 
@@ -95,15 +85,7 @@ lod_sample_dat|>
   geom_col() +
   theme_hpa(axis_x = F)
 
-ggsave(savepath("LOD_per_sample.png"), h = 5, w = 15)
-
-samples_low_det <- 
-  lod_sample_dat |> 
-  filter(above_LOD == "Yes") |> 
-  arrange(n) |> 
-  filter(n < 2000) |> 
-  left_join(wellness_meta |> 
-              select(DAid, subject, visit), by = "DAid") 
+#ggsave(savepath("LOD_per_sample.png"), h = 5, w = 15)
 ```
 
 
@@ -220,7 +202,7 @@ protein_detectability <-
 # 
 # ggsave(savepath_results("Manuscript-figures", "S1.pdf"), h = 5, w = 7)
 
-write_csv2(protein_detectability, savepath_data("Supplementary-files", "DataS1.csv"))
+#write_csv2(protein_detectability, savepath_data("Supplementary-files", "DataS1.csv"))
 ```
 
 # Secretome analyses
@@ -265,7 +247,7 @@ block_donut <-
 
 
 secretome_donut | platform_donut | block_donut
-ggsave(savepath_results("Publication-figures", "Fig1d.pdf"), h = 6, w = 6)
+#ggsave(savepath_results("Publication-figures", "Fig1d.pdf"), h = 6, w = 6)
 ```
 
 ## Secretome classes
@@ -315,7 +297,7 @@ protein_detectability |>
   scale_fill_manual(values = pal_secretome_condensed) +
   theme_hpa()
 
-ggsave(savepath_results("Manuscript-figures", "secretome_LOD.pdf"), h = 6, w = 7)
+#ggsave(savepath_results("Manuscript-figures", "secretome_LOD.pdf"), h = 6, w = 7)
 ```
 
 
@@ -333,7 +315,10 @@ Visualize stability of the proteome per sample.
 
 ```{r}
 wellness_umap <- 
-  do_umap(data = data_wellness, wide = F, impute = T, plots = F)
+  do_umap(data = data_wellness, 
+          wide = F, 
+          impute = T, 
+          plots = F)
 
 wellness_umap |> 
   left_join(meta_wellness |> 
@@ -342,7 +327,8 @@ wellness_umap |>
   geom_point(show.legend = F) +
   
   scale_color_manual(values = pal_wellness_individuals) +
-  theme_hpa()
+  theme_hpa() +
+  theme(axis.text = element_text(fbase_family = "Myriad Pro SemiCondensed"))
 
 ggsave(savepath_results("Publication-figures", "Fig1f.pdf"), h = 6, w = 6)
 
