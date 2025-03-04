@@ -23,6 +23,44 @@ meta_bamse <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/b
 
 # BAMSE
 
+## 
+
+```{r}
+
+order_bamse <- 
+  meta_bamse |> 
+  filter(Visit == 4) |> 
+  arrange(Date)
+
+visit_ranges <- 
+  meta_bamse %>%
+  mutate(Visit = as.factor(Visit)) |> 
+  group_by(Visit) %>%
+  summarize(start_date = min(Date), end_date = max(Date))
+
+  meta_bamse |> 
+  mutate(Visit = as.factor(Visit),
+         Subject = factor(Subject, levels = order_bamse$Subject)) |>
+  ggplot(aes(Date, Subject, color = Visit, group = Subject)) +
+  geom_rect(data = visit_ranges,
+            aes(xmin = start_date, xmax = end_date, ymin = -Inf, ymax = Inf, fill = Visit),
+            alpha = 0.3, inherit.aes = FALSE) +
+  geom_line(show.legend = F, color = "grey90") +
+  geom_point(show.legend = F) +
+  scale_fill_manual(values = pal_bamse) +
+  scale_color_manual(values = pal_bamse) +
+  theme_hpa() +
+  xlab("Sample date") +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank())
+
+  ggsave(savepath_results("Manuscript-figures", "bamse_visit_timeline.pdf"), width = 7, height = 5)
+
+  plot_id | plot_wellness  
+
+```
+
+
 ## Cohort overview
 
 ```{r}
@@ -131,11 +169,44 @@ plot_pca <-
   stat_ellipse(geom = "polygon", alpha = 0.3, color = NA) + 
   scale_color_manual(values = pal_bamse) +
   scale_fill_manual(values = pal_bamse) +
-  theme_hpa()
+  theme_hpa() +
+  ggtitle("PCA")
 
 plot_density + plot_pca
 
 ggsave(savepath_results("Publication-figures", "Fig2a_fig2b.pdf"), h = 4, w = 10)
+```
+
+## UMAP
+
+```{r}
+umap_bamse <- 
+  do_umap(data = data_bamse_detected,
+       wide = F,
+       plots = F)
+
+plot_umap <- 
+  umap_bamse |> 
+  left_join(meta_bamse, by = c("Sample" = "DAid")) |> 
+  mutate(Visit = factor(Visit)) |> 
+  ggplot(aes(UMAP1, UMAP2, color = Visit, fill = Visit)) +
+  geom_point(alpha = 0.7) +
+  stat_ellipse(geom = "polygon", alpha = 0.3, color = NA) + 
+  scale_color_manual(values = pal_bamse) +
+  scale_fill_manual(values = pal_bamse) +
+  theme_hpa() +
+  ggtitle("UMAP")
+
+
+ggsave(savepath_results("Publication-figures", "BAMSE_UMAP.pdf"), h = 5, w = 6)
+
+plot_umap
+ggsave(savepath_results("Publication-figures", "Fig2a_fig2b.pdf"), h = 4, w = 10)
+
+
+plot_uamp + plot_pca
+ggsave(savepath("BAMSE_UMAP_PCA.png"), h = 5, w = 10)
+
 ```
 
 

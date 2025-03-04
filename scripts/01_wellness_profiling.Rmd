@@ -28,7 +28,47 @@ ht_blocks <- read_tsv("data/other/ht_assay_block.tsv")
 
 ```{r}
 
-```
+plot_id <- 
+  subject_order |> 
+  ungroup() |> 
+  mutate(Subject = factor(Subject, levels = subject_order$Subject)) |>
+  mutate(rank = rank(-n, ties.method = "first"),
+         y = 1) |> 
+  ggplot(aes(y, Subject, fill = Subject)) +
+  geom_tile(color = "white", show.legend = F) +
+  scale_fill_manual(values = pal_wellness_individuals) +
+  theme_hpa(axis_x = F) +
+  coord_fixed() +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank())
+
+visit_ranges <- 
+  meta_wellness %>%
+  mutate(Visit = as.factor(Visit)) |> 
+  group_by(Visit) %>%
+  summarize(start_date = min(Date), end_date = max(Date))
+
+plot_wellness <- 
+  meta_wellness |> 
+  mutate(Subject = factor(Subject, levels = wellness_ids),
+         Visit = as.factor(Visit)) |>
+  ggplot(aes(Date, Subject, color = Visit, group = Subject)) +
+  geom_rect(data = visit_ranges,
+            aes(xmin = start_date, xmax = end_date, ymin = -Inf, ymax = Inf, fill = Visit),
+            alpha = 0.3, inherit.aes = FALSE) +
+  geom_line(show.legend = F, color = "grey80") +
+  geom_point(show.legend = F) +
+  # scale_color_manual(values = pal_wellness_individuals) +
+  scale_fill_viridis_d(option = "viridis", direction = -1) +
+  scale_color_viridis_d(option = "viridis", direction = -1) +
+  theme_hpa(axis_y = F) +
+  xlab("Sample date")
+
+plot_id | plot_wellness  
+
+  ggsave(savepath("wellness_visit_timeline.pdf"), width = 10, height = 5)
+
+ ```
 
 # LOD
 
@@ -79,16 +119,6 @@ dat <-
   summarize(above_LOD_count = sum(NPX > LOD), .groups = "drop") |> 
   ungroup() 
 
-dat |> 
-  group_by(Subject) |> 
-  count(above_LOD_count) |> 
-  mutate(above_LOD_count = fct_rev(factor(above_LOD_count))) |> 
-  ggplot(aes(Subject, n, fill = above_LOD_count)) +
-  geom_col() +
-  scale_fill_viridis_d("Number of visits", direction = -1) +
-  theme_hpa(angled = T) + #, axis_x = F
-  xlab("Subject")
-
 number_of_visits <- 
   meta_wellness |> 
   group_by(Subject) |> 
@@ -135,7 +165,6 @@ wellness_ids <-
 
 names(pal_wellness_individuals) <- wellness_ids
 
-
 plot_lod <- 
   lod_subject_dat |> 
   mutate(Subject = factor(Subject, levels = subject_order$Subject)) |> 
@@ -159,8 +188,9 @@ plot_id <-
   theme(axis.ticks.x = element_blank(),
         axis.text.x = element_blank())
 
-plot_lod / plot_id
-ggsave(savepath_results("Publication-figures", "LOD_per_sample_names.pdf"), h = 4.5, w = 18) 
+plot_lod / plot_id +
+  plot_layout(heights = c(10,1))
+ggsave(savepath_results("Publication-figures", "LOD_per_sample_names.pdf"), h = 4, w = 15) 
 ```
 
 ## Save detectability
@@ -178,20 +208,19 @@ protein_detectability <-
   rename(`Number of samples above LOD`= count) |> 
   arrange(-`Number of samples above LOD`)  
 
-protein_detectability |> 
-  left_join(olink_targets, by = "Assay") |> 
-  mutate(Platform = case_when(Platform == "HT" ~ "Olink Explore HT",
-                              Platform == "3K" ~ "Olink Explore 3072",
-                              Platform == "1.5K" ~ "Olink Explore 1463")) |> 
-  ggplot(aes(`Percentage of samples above LOD`, fill = Platform)) + 
-  geom_histogram() +
-  scale_fill_manual(values = pal_platforms) +
-  theme_hpa()
-
-ggsave(savepath_results("Manuscript-figures", "S1.pdf"), h = 5, w = 7)
+# protein_detectability |> 
+#   left_join(olink_targets, by = "Assay") |> 
+#   mutate(Platform = case_when(Platform == "HT" ~ "Olink Explore HT",
+#                               Platform == "3K" ~ "Olink Explore 3072",
+#                               Platform == "1.5K" ~ "Olink Explore 1463")) |> 
+#   ggplot(aes(`Percentage of samples above LOD`, fill = Platform)) + 
+#   geom_histogram() +
+#   scale_fill_manual(values = pal_platforms) +
+#   theme_hpa()
+# 
+# ggsave(savepath_results("Manuscript-figures", "S1.pdf"), h = 5, w = 7)
 
 write_csv2(protein_detectability, savepath_data("Supplementary-files", "DataS1.csv"))
-
 ```
 
 # Secretome analyses
@@ -235,27 +264,17 @@ block_donut <-
   plot_donut(proteins_below_LOD_80$Assay, type = "block") 
 
 
-secretome_donut
-ggsave(savepath_results("Publication-figures", "Fig1d.pdf"), h = 6, w = 6)
-
 secretome_donut | platform_donut | block_donut
-
-
 ggsave(savepath_results("Publication-figures", "Fig1d.pdf"), h = 6, w = 6)
 ```
 
 ## Secretome classes
 
 ```{r}
-
 secreted_other <- c("Secreted in other tissues",
                     "Secreted - unknown location",
                     "Secreted in male reproductive system",
                     "Secreted in female reproductive system")
-
-secretome_hpa |> 
-  distinct(`Secretome location`)
-
 
 data_wellness |>
   mutate(above_LOD = ifelse(NPX > LOD, "Yes", "No")) |> 
