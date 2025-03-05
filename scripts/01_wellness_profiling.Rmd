@@ -19,7 +19,7 @@ source("scripts/functions/themes_palettes.R")
 data_wellness <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/wellness_data_ht_phase2.tsv")
 meta_wellness <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/wellness_meta_ht_phase2.tsv")
 concentrations <- import_df("data/other/concentrations_blood-atlas-build.xlsx")
-olink_targets <- read_csv("data/other/overlap_olink_platforms.csv")
+olink_targets <- read_tsv("data/other/targets_olink_platforms.tsv")
 secretome_hpa <- read_tsv("data/secretome_v24.tsv")
 ht_blocks <- read_tsv("data/other/ht_assay_block.tsv")
 ```
@@ -202,7 +202,7 @@ protein_detectability <-
 # 
 # ggsave(savepath_results("Manuscript-figures", "S1.pdf"), h = 5, w = 7)
 
-#write_csv2(protein_detectability, savepath_data("Supplementary-files", "DataS1.csv"))
+write_csv2(protein_detectability, savepath_data("Supplementary-files", "DataS1.csv"))
 ```
 
 # Secretome analyses
@@ -246,8 +246,48 @@ block_donut <-
   plot_donut(proteins_below_LOD_80$Assay, type = "block") 
 
 
-secretome_donut | platform_donut | block_donut
-#ggsave(savepath_results("Publication-figures", "Fig1d.pdf"), h = 6, w = 6)
+(secretome_donut | platform_donut | block_donut) +
+  plot_layout(guides = 'collect')
+ggsave(savepath_results("Manuscript-figures", "FigS1b.pdf"), h = 10, w = 10)
+```
+
+## Histogram
+
+```{r}
+dat <- 
+  secretome_hpa |> 
+  filter(Gene %in% unique(data_wellness$Assay)) |> 
+  select(Gene, `Secretome location`) |> 
+  left_join(protein_detectability, by = c("Gene" = "Assay")) |> 
+  mutate(`Secretome location` = ifelse(is.na(`Secretome location`), "Not secreted", `Secretome location`)) |> 
+  filter(`Secretome location` != "Immunoglobulin genes") 
+
+dat |> 
+  distinct(`Secretome location`)
+  
+secretome_level <- c("Not secreted",
+                    "Secreted to blood",
+                    "Intracellular and membrane",
+                    "Secreted to extracellular matrix",
+                    "Secreted in brain",
+                    "Secreted to digestive system",
+                    "Secreted in female reproductive system",
+                    "Secreted in male reproductive system",
+                    "Secreted in other tissues",
+                    "Secreted - unknown location")
+
+dat |> 
+  mutate(`Secretome location` = factor(`Secretome location`, levels = secretome_level)) |>
+ggplot(aes(`Percentage of samples above LOD`, fill = `Secretome location`)) + 
+  geom_histogram() +
+  scale_fill_manual(values = pal_secreted) +
+  facet_wrap(~`Secretome location`, scales = "free", nrow = 2) +
+  theme_hpa() +
+  theme(legend.position = "top")
+
+
+ggsave(savepath_results("Manuscript-figures", "S1a.pdf"), h = 7, w = 12)
+
 ```
 
 ## Secretome classes
@@ -306,7 +346,7 @@ protein_detectability |>
 ```{r}
 data_wellness_detected <- 
   data_wellness |>
-  filter(Assay %in% proteins_above_LOD_80$Assay)
+  filter(!Assay %in% proteins_below_LOD_80$Assay)
 ```
 
 # UMAP
@@ -314,35 +354,32 @@ data_wellness_detected <-
 Visualize stability of the proteome per sample.
 
 ```{r}
-wellness_umap <- 
+# wellness_umap <- 
+#   do_umap(data = data_wellness_detected, 
+#           wide = F, 
+#           impute = T, 
+#           plots = F)
+
+wellness_umap_all_proteins <- 
   do_umap(data = data_wellness, 
           wide = F, 
           impute = T, 
           plots = F)
 
-wellness_umap |> 
+wellness_umap_all_proteins |> 
   left_join(meta_wellness |> 
               select(DAid, Subject, Visit), by =c("Sample" = "DAid")) |>
   ggplot(aes(UMAP1, UMAP2, color = Subject, frame = Visit)) +
   geom_point(show.legend = F) +
   
   scale_color_manual(values = pal_wellness_individuals) +
-  theme_hpa() +
-  theme(axis.text = element_text(fbase_family = "Myriad Pro SemiCondensed"))
-
-ggsave(savepath_results("Publication-figures", "Fig1f.pdf"), h = 6, w = 6)
-
-
-wellness_umap |> 
-  left_join(meta_wellness |> 
-              select(DAid, Subject, Visit), by =c("Sample" = "DAid")) |>
-  ggplot(aes(UMAP1, UMAP2, color = Subject, frame = Visit)) +
-  geom_point(show.legend = F) +
-  facet_wrap(~Visit) +
-  scale_color_manual(values = pal_wellness_individuals) +
   theme_hpa()
+ggsave(savepath_results("Manuscript-figures", "Fig1f_all_proteins.pdf"), h = 6, w = 6)
 
-ggsave(savepath_results("Publication-figures", "Fig1f.pdf"), h = 6, w = 6)
+wellness_umap_awellness_umapll_proteins + 
+  facet_wrap(~Visit)
+
+ggsave(savepath_results("Manuscript-figures", "Fig1f_all_proteins_faceted.pdf"), h = 8, w = 12)
 ```
 
 ## Interactive visualization
@@ -380,14 +417,14 @@ data_mixed_model <-
   select(DAid, Assay, NPX) %>%
   left_join(meta_wellness |> 
               mutate(Visit = as.numeric(Visit)) |> 
-              select(DAid, subject = Subject, visit = Visit, age = Age, sex = Sex), by = "DAid")
+              select(DAid, Subject, Age, Sex), by = "DAid")
 
 # Run mixed effect models on all proteins extracting the fixed effects
 fixed_effects <- 
   map_df(unique(data_mixed_model$Assay), function(protein) {
     
     do_mixed_effect_model(df = data_mixed_model, 
-                          type = "variance_explained",
+                          type = "fixed_effects",
                           protein = protein)
     
   })
@@ -401,6 +438,12 @@ variance_explained <-
                           protein = protein)
     
   })
+
+saveRDS(fixed_effects, "data/processed/MM_estimates_Wellness.rds")
+saveRDS(variance_explained, "data/processed/MM_variance_Wellness.rds")
+
+write_excel_csv(fixed_effects, savepath_data("Supplementary-files", "Data_S2_Wellness_estimates.csv"))
+write_excel_csv(variance_explained, savepath_data("Supplementary-files", "Data_S2_Wellness_variance.csv"))
 ```
 
 ## Visualize 
@@ -409,22 +452,153 @@ variance_explained <-
 
 ```{r}
 order <- 
-  fixed_effects |> 
-  #filter(Component == "Fixed Effects") |> 
-  filter(Component == "Random Effects (Subject)") |> 
-  arrange(-Proportion)
+  variance_explained |> 
+  filter(Component == "Residual") |> 
+  arrange(Variance)
+
+top_proteins <- 
+  variance_explained |> 
+  filter(Component == "Random effects (subject)") |> 
+  arrange(-Variance) |> 
+  head(5) |> 
+  bind_rows(variance_explained |> 
+              filter(Component == "Fixed effects (age & sex)") |> 
+              arrange(-Variance) |> 
+              head(5)) |> 
+  mutate(Variance = Variance * 100) 
 
 variance_explained |> 
-  mutate(Assay = factor(Assay,
-                        levels = order$Assay)) |> 
+  mutate(Protein = factor(Protein,
+                          levels = order$Protein)) |> 
   filter(Component != "Residual") |> 
-  ggplot(aes(Assay, Proportion, fill = Component)) +
+  mutate(Variance = Variance * 100) |> 
+  ggplot(aes(Protein, Variance, fill = Component)) +
   geom_col(position = "stack") +
-  scale_fill_manual(values = c("#E8A29A", "#ABC8F6")) +
-  theme_hpa(axis_x = F) 
+  scale_fill_manual(values = pal_mm) +
+  theme_hpa() +
+  theme(legend.position = "top",
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank()) +
+  ylab("Variance explained (%)")
 
-ggsave(savepath_results("Publication-figures", "MM-variance-explained.pdf"), h = 4, w = 18)
+ggsave(savepath_results("Manuscript-figures", "MM-variance-explained.pdf"), h = 4, w = 14)
 ```
+
+### Examples main
+
+```{r}
+# Example individual
+data_wellness |> 
+  filter(Assay %in% c("PNLIPRP2", "SPINT3")) |> 
+  left_join(meta_wellness, by = "DAid") |> 
+  mutate(Visit = factor(Visit)) |> 
+  ggplot(aes(Visit, NPX, color = Sex, group = Subject)) +
+  geom_point() +
+  geom_line(show.legend = F, alpha = 7) +
+  scale_color_manual(values = pal_sex) +
+  facet_wrap(~Assay, nrow = 1, scale = "free") +
+  theme_hpa() +
+  theme(legend.position = "top")
+
+ggsave(savepath_results("Manuscript-figures", "MM-example-individual.pdf"), h = 3.5, w = 6)
+```
+
+
+### Examples supplementary
+
+```{r}
+top_100 <- 
+  order |> 
+  mutate(Variance = Variance * 100) |> 
+  head(100)
+
+p1 <- 
+  variance_explained |> 
+  filter(Protein %in% top_100$Protein) |>
+  mutate(Protein = factor(Protein, levels = top_100$Protein)) |> 
+  filter(Component != "Residual") |> 
+  mutate(Variance = Variance * 100) |> 
+  ggplot(aes(Protein, Variance, fill = Component)) +
+  geom_col(position = "stack") +
+  scale_fill_manual(values = pal_mm) +
+  theme_hpa(angled = T) +
+  # theme(legend.position = "top",
+  #       axis.ticks.x = element_blank(),
+  #       axis.text.x = element_blank()) +
+  ylab("Variance explained (%)") +
+  # Add labels for top proteins outside the plot, spread on the x-axis
+  geom_label_repel(data = top_proteins, aes(label = Protein, fill = Component),
+             nudge_x = 0.25,  # Move labels to the right of the plot
+             color = "black", fontface = "bold", size = 4, 
+             hjust = 0, vjust = 0.5)  #
+
+proteins_random <- 
+  top_proteins |> 
+  filter(Component == "Random effects (subject)") 
+
+p2 <- 
+  data_wellness |> 
+  filter(Assay %in% proteins_random$Protein) |> 
+  mutate(Assay = factor(Assay, levels = proteins_random$Protein)) |>
+  left_join(meta_wellness, by = "DAid") |> 
+  ggplot(aes(Visit, NPX, color = Subject)) +
+  geom_point(show.legend = F) +
+  geom_line(show.legend = F) +
+  scale_color_manual(values = pal_wellness_individuals) +
+  facet_wrap(~Assay, nrow = 1, scale = "free") +
+  theme_hpa()
+
+# proteins_fixed <- 
+#   top_proteins |> 
+#   filter(Component == "Fixed effects (age & sex)") 
+# 
+# fixed_effects |> 
+#   filter(Assay %in% proteins_fixed$Protein)
+
+top_age <- 
+  fixed_effects |> 
+  mutate(p.adjusted = p.adjust(p.value, method = "BH")) |> 
+  filter(p.adjusted < 0.05) |> 
+  filter(term == "Age") |> 
+  arrange(p.adjusted)|> 
+  head(5)
+
+top_sex <- 
+  fixed_effects |> 
+  mutate(p.adjusted = p.adjust(p.value, method = "BH")) |> 
+  filter(p.adjusted < 0.05) |> 
+  filter(term == "SexM") |> 
+  arrange(p.adjusted) |> 
+  head(5)
+
+p3 <- 
+  data_wellness |> 
+  filter(Assay %in% top_sex$Assay) |> 
+  mutate(Assay = factor(Assay, levels = top_sex$Assay)) |>
+  left_join(meta_wellness, by = "DAid") |> 
+  ggplot(aes(Visit, NPX, color = Sex, group = Subject)) +
+  geom_point(show.legend = F) +
+  geom_line(show.legend = F) +
+  scale_color_manual(values = pal_sex) +
+  facet_wrap(~Assay, nrow = 1, scale = "free") +
+  theme_hpa()
+
+p4 <- 
+  data_wellness |> 
+  filter(Assay %in% top_age$Assay) |> 
+  mutate(Assay = factor(Assay, levels = top_age$Assay)) |>
+  left_join(meta_wellness, by = "DAid") |> 
+  ggplot(aes(Age, NPX, color = Age)) +
+  geom_point() +
+  geom_smooth(color = "black") +
+  scale_color_viridis_c(option = "A") +
+  facet_wrap(~Assay, nrow = 1, scale = "free") +
+  theme_hpa()
+
+p1 / p2 / p3 / p4
+ggsave(savepath_results("Manuscript-figures", "MM-variance-explained.pdf"), h = 12, w = 14)
+```
+
 
 ### Example age
 
