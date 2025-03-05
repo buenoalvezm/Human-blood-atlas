@@ -16,8 +16,8 @@ source("scripts/functions/functions_visualization.R")
 source("scripts/functions/themes_palettes.R")
 
 # Read in data
-data_disease <- read_tsv("data/data_phase1_pandisease_curated_20250226.tsv")
-meta_disease <- read_tsv("data/meta_phase1_pandisease_20250226.tsv")
+data_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_data_phase1.tsv")
+meta_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_meta_phase1.tsv")
 ```
 
 ## Disease order

@@ -16,11 +16,12 @@ source("scripts/functions/functions_visualization.R")
 source("scripts/functions/themes_palettes.R")
 
 # Read in data
-data_disease <- read_tsv("data/data_phase1_pandisease_curated_20250226.tsv")
-meta_disease <- read_tsv("data/meta_phase1_pandisease_20250226.tsv")
+data_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_data_phase1.tsv")
+meta_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_meta_phase1.tsv")
 
 data_disease_wide <- 
   data_disease |> 
+  select(-OlinkID, -LOD) |> 
   pivot_wider(names_from = Assay, 
               values_from = NPX) 
 ```
@@ -68,18 +69,18 @@ dat <-
 
 top_variance <- 
   dat |> 
-  filter(Total_variance > 40) |> 
+  filter(Total_variance > 45) |> 
   distinct(Protein) |> 
   pull()
 
-dat |> 
-  #filter(Protein %in% top_variance) |>
+plot_overall <- 
+  dat |> 
   ggplot(aes(x = reorder(Protein, -Total_variance), y = Eta2_perc, fill = term)) +
   geom_col() +
     geom_vline(xintercept = 40, color = "grey", linetype = "dashed", size = 0.5) +
 
   theme_hpa(angled = T, axis_x = F) +
-  scale_fill_manual(values = pal_anova_wellness) +
+  scale_fill_manual(values = pal_anova) +
   ylab("% of variance explained") +
   xlab("") 
 
@@ -88,17 +89,51 @@ ggsave(savepath("anova_DA.pdf"), h = 4, w = 13)
 ggsave(savepath("anova_DA.png"), h = 4, w = 13)
 
 # Top proteins
-dat |> 
+plot_top <- 
+  dat |> 
   filter(Protein %in% top_variance) |>
   ggplot(aes(x = reorder(Protein, -Total_variance), y = Eta2_perc, fill = term)) +
   geom_col(show.legend = F) +
   theme_hpa(angled = T) +
   scale_fill_manual(values = pal_anova) +
   ylab("% of variance explained") +
-  xlab("") 
+  xlab("")+
+  theme(axis.ticks.x = element_blank(),
+        axis.text.x = element_text(size = 8),
+        axis.line.x = element_blank())
 
-ggsave(savepath("anova_DA_top.pdf"), h = 5, w = 15)
-ggsave(savepath("anova_DA_top.png"), h = 5, w = 15)
+plot_overall / plot_top
+
+ggsave(savepath_results("Manuscript-figures", "anova_DA.pdf"), h = 6, w = 12)
+
+
+groups <- 
+  dat |> 
+  group_by(Protein) |> 
+  top_n(1, Eta2_perc) |> 
+  select(Protein, top_term = term)
+
+selected_groups <- 
+  groups |> 
+  filter(top_term != "Disease")
+dat |> 
+  group_by(Protein) |> 
+  top_n(1, Eta2_perc) |> 
+  ungroup() |> 
+  count(term)
+
+dat |>  
+  inner_join(selected_groups) |>  
+  ggplot(aes(x = reorder(Protein, -Total_variance), y = Eta2_perc, fill = term)) +  
+  geom_col() +  
+  geom_vline(xintercept = 40, color = "grey", linetype = "dashed", size = 0.5) +  
+  theme_hpa(angled = T) +  
+  scale_fill_manual(values = pal_anova) +  
+  facet_grid(. ~ top_term, scales = "free", space = "free") +  # Use facet_grid instead of facet_wrap
+  ylab("% of variance explained") +  
+  xlab("")
+
+
 
 
 #Top protein for age, sex, BMI
@@ -194,7 +229,7 @@ age_ml_split <-
                  proportion = 0.8,
                  variable_stratify = "Age")
 
-saveRDS(age_ml_split, "server-scripts/data/age_ml_split.rds")
+#saveRDS(age_ml_split, "server-scripts/data/age_ml_split.rds")
 ```
 
 ### Sex
@@ -211,7 +246,7 @@ sex_ml_split <-
                  proportion = 0.8,
                  variable_stratify = "Sex")
 
-saveRDS(sex_ml_split, "server-scripts/data/sex_ml_split.rds")
+#saveRDS(sex_ml_split, "server-scripts/data/sex_ml_split.rds")
 ```
 
 ### BMI
@@ -229,18 +264,18 @@ bmi_ml_split <-
                  proportion = 0.8,
                  variable_stratify = "BMI")
 
-saveRDS(bmi_ml_split, "server-scripts/data/bmi_ml_split.rds")
+#saveRDS(bmi_ml_split, "server-scripts/data/bmi_ml_split.rds")
 ```
 
 
 ## Load results from seed analyes (HPC)
 
 ```{r}
-protein_importance_age <- read_tsv("parsed-results/importances_Age.tsv")
+protein_importance_age <- read_tsv("server-scripts/parsed-results/importances_Age.tsv")
 protein_importance_sex <- read_tsv("parsed-results/importances_Sex.tsv")
 protein_importance_bmi <- read_tsv("parsed-results/importances_BMI.tsv")
 
-predictions_age <- read_tsv("parsed-results/predictions_Age.tsv")
+predictions_age <- read_tsv("server-scripts/parsed-results/predictions_Age.tsv")
 predictions_sex <- read_tsv("parsed-results/predictions_Sex.tsv")
 predictions_bmi <- read_tsv("parsed-results/predictions_BMI.tsv")
 ```
@@ -319,7 +354,7 @@ p2 <-
   protein_importance_age |> 
   count(term) |> 
   ggplot(aes(n)) +
-  geom_histogram(fill = pal_age_sex_bmi["Age"]) +
+  geom_histogram() +#(fill = pal_age_sex_bmi["Age"]) +
   theme_hpa() +
   theme_hpa() +
   ylab("Number of proteins") +
@@ -563,10 +598,11 @@ predictions_sex <-
 
 ```{r}
 age_proteins <- 
-  ml_age$protein_importance |> 
-  group_by(term) |> 
-  summarise(abs_estimate = mean(abs(estimate))) |> 
-  arrange(-abs_estimate) |> 
+  protein_importance_age |> 
+  filter(Importance > 0) |> 
+  group_by(Variable) |> 
+  summarise(Avg_importance = mean(Importance)) |> 
+  arrange(-Avg_importance) |> 
   head(25)
 
 age_train <- 
@@ -590,12 +626,12 @@ R2 <-
   pull(.estimate) |> 
   round(2)
 
-predictions_age <- 
-  age_prediction$predictions |> 
+#predictions_age <- 
+age_prediction$predictions |> 
   mutate(offset = Variable - .pred) |> 
   ggplot(aes(Variable, .pred, color = offset)) +
   geom_point() +
-  geom_abline(x = y, lty = "dashed") +
+  geom_abline(intercept = 0, slope = 1, lty = "dashed") +
   geom_text(aes(label = paste0("R2 = ", R2), 
                 x = 75,
                 y = 0.25), inherit.aes = F) +
@@ -603,9 +639,7 @@ predictions_age <-
   theme_hpa() +
   ggtitle("Age")
 
-#ggsave(savepath("age_prediction.png"), h = 6, w = 6)
-
-
+ggsave(savepath_results("Manuscript-figures", "Fig3e_age_prediction.pdf"), h = 6, w = 6)
 ```
 
 ## BMI model
@@ -743,9 +777,9 @@ ggsave(savepath("age20_disease_atlas.png"), h = 6, w = 8)
 
 ```{r}
 p1 <- 
-  resource_data |> 
+  data_disease |> 
   filter(Assay == "CXCL17") |> 
-  left_join(resource_meta |> 
+  left_join(meta_disease |> 
               select(DAid, Age, Class), by = "DAid") |> 
   ggplot(aes(Age, NPX, color = Class)) +
   geom_point(size = 0.5, show.legend = F) +
@@ -754,9 +788,9 @@ p1 <-
   theme_hpa() 
   
 p2 <- 
-  resource_data |> 
+  data_disease |> 
   filter(Assay == "COL9A1") |> 
-  left_join(resource_meta |> 
+  left_join(meta_disease |> 
               select(DAid, Age, Class), by = "DAid") |> 
   ggplot(aes(Age, NPX, color = Class)) +
   geom_point(size = 0.5, show.legend = F) +
@@ -765,9 +799,10 @@ p2 <-
   theme_hpa()
 
 p1 + p2
+ggsave(savepath_results("Manuscript-figures", "Fig3c-d_examples_age.pdf"), h = 4, w = 8)
 
-
-ggsave(savepath("examples_age.pdf"), h = 4, w = 8)
+p2
+ggsave(savepath_results("Manuscript-figures", "col9a1_age.pdf"), h = 4, w = 4)
 ```
 
 
