@@ -1,28 +1,80 @@
 
 # Functions for visualization
+
+#library(lme4)
+#library(multilevelmod)
+library(broom.mixed)
+#library(igraph)
+#library(ggraph)
+#library(FNN)
+
+library(lmerTest)
+library(performance)
+library(effectsize)
+library(MatchIt)
 library(limma)
 library(tidymodels)
 library(themis)
-library(effectsize)
-library(lme4)
-library(multilevelmod)
-library(broom.mixed)
-library(lmerTest)
-library(igraph)
-library(ggraph)
-library(FNN)
-library(MatchIt)
 
+do_mixed_effect_model <- function(df, protein, type) {
+  
+  df <- 
+    df |> 
+    filter(Assay == protein) |> 
+    select(DAid, Age, Sex, Subject, NPX) |> 
+    mutate(Age = as.numeric(Age),
+           Sex = as.factor(Sex),
+           Subject = as.factor(Subject))
+  
+  
+  # Fit the mixed-effects model (no random slopes, random intercepts)
+  mixed_model <- lmer(NPX ~ Age + Sex + (1 | Subject), data = df) # REML = F,
+  
+  # Compute R² for fixed and random effects
+  r2_values <- r2_nakagawa(mixed_model)
+  
+  # Check for singular fit
+  if (isSingular(mixed_model, tol = 1e-4)) {
+    message(paste("Protein", protein, ": Singular fit detected. Setting random variance explained to 0."))
+    marginal_r2 <- r2_values$R2_marginal
+    conditional_r2 <- marginal_r2  # No variance from random effects
+    random_r2 <- 0  # Explicitly set to 0
+  } else {
+    marginal_r2 <- r2_values$R2_marginal
+    conditional_r2 <- r2_values$R2_conditional
+    random_r2 <- conditional_r2 - marginal_r2
+  }
+  
+  # Store variance explained
+  variance_explained <- tibble(
+    Component = c("Fixed effects (age & sex)", "Random effects (subject)", "Residual"),
+    Variance = c(marginal_r2, random_r2, 1 - conditional_r2)
+  ) |> mutate(Protein = protein) |> relocate(Protein)
+  
+  
+  # Tidy fixed effects
+  fixed_effects <- 
+    tidy(mixed_model, effects = "fixed") |>  
+    mutate(Assay = protein)
+  
+  
+  if(type == "fixed_effects") {
+    return(fixed_effects)
+  } else if(type == "variance_explained") {
+    return(variance_explained)
+  }
+  
+}
 
 # Function to run ANOVA for a given protein
 do_anova <- function(df, protein) {
   
-  df <- 
+  df_protein <- 
     df |> 
     filter(Assay == protein)
   
   # Linear model with all variables
-  model <- lm(NPX ~ Age + Sex + BMI + Disease , data = df) #+ month_of_sampling
+  model <- lm(NPX ~ Age + Sex + BMI + Disease , data = df_protein) 
   
   # Conduct ANOVA
   anova_res <- anova(model)
@@ -41,9 +93,20 @@ do_anova <- function(df, protein) {
     left_join(eta_squared_res, by = c("term" = "Parameter")) |> 
     mutate(Eta2_perc = Eta2_partial * 100) |> 
     mutate(Protein = protein) |> 
-    relocate(Protein)
+    relocate(Protein) 
+  
+  # Residuals analysis: Normality and Homoscedasticity
+  residual_normality <- shapiro.test(residuals(model))  # Shapiro-Wilk test (p > 0.05 suggests normality)
+  homoscedasticity <- car::leveneTest(residuals(model) ~ factor(df_protein$Disease), data = df_protein)  # Levene's test for equal variance
+  
+  # Add residual test results to the output
+  tidy_anova <- 
+    tidy_anova |> 
+    mutate(Residual_Normality_P = residual_normality$p.value,
+           Homoscedasticity_P = homoscedasticity$`Pr(>F)`[1])
   
   return(tidy_anova)
+  
 }
 
 # do_mixed_effect_model <- function(df, protein) {
@@ -67,54 +130,10 @@ do_anova <- function(df, protein) {
 # }
 
 
+# anova(M1,M2) -> compare models
+
 library(performance)
 
-do_mixed_effect_model <- function(df, protein, type) {
-  
-  df <- 
-    df %>%
-    filter(Assay == protein) %>% 
-    select(DAid, age, sex, subject, NPX) %>% 
-    mutate(age = as.numeric(age))
-  
-  # Fit the mixed-effects model
-  mixed_model <- lmer(NPX ~ age + sex + (1 | subject), data = df)
-  
-  # Extract variance components
-  var_comp <- as.data.frame(VarCorr(mixed_model))
-  random_effect_variance <- var_comp$vcov[var_comp$grp == "subject"]
-  residual_variance <- sigma(mixed_model)^2
-  total_variance <- sum(var_comp$vcov) + residual_variance
-  
-  # Marginal and conditional R²
-  r2_values <- r2(mixed_model)
-  marginal_r2 <- r2_values$R2_marginal  # Variance explained by fixed effects
-  conditional_r2 <- r2_values$R2_conditional  # Variance explained by fixed + random effects
-  
-  # Variance explained by each component
-  fixed_effect_variance <- marginal_r2 * total_variance
-  random_effect_explained <- (conditional_r2 - marginal_r2) * total_variance
-  residual_unexplained <- residual_variance / total_variance
-  
-  variance_explained <- data.frame(
-    Component = c("Fixed Effects", "Random Effects (Subject)", "Residual"),
-    Variance = c(fixed_effect_variance, random_effect_explained, residual_variance),
-    Proportion = c(marginal_r2, conditional_r2 - marginal_r2, residual_unexplained)
-  ) %>% 
-    as_tibble() |> 
-    mutate(Assay = protein)
-  
-  # Tidy fixed effects
-  fixed_effects <- tidy(mixed_model, effects = "fixed") %>% 
-    mutate(Assay = protein)
-  
-  if(type == "fixed_effects") {
-    return(fixed_effects)
-  } else if(type == "variance_explained") {
-    return(variance_explained)
-  }
-  
-}
 
 
 # Function to match case samples to controls
@@ -822,3 +841,146 @@ generate_split <- function(data,
 # }
 # 
 # 
+
+#Function to run lasso pipeline for prediction of continuous variables
+continuous_prediction <-  
+  function(split_train,
+           split_test,
+           variable_predict,
+           seed#, 
+           #path_save
+           ) {
+    
+    
+    cat(paste0("\nPreparing training and testing data for ", variable_predict))
+    
+    split_train <- 
+      split_train |> 
+      rename(Variable = !!sym(variable_predict))
+    
+    split_test <- 
+      split_test |> 
+      rename(Variable = !!sym(variable_predict))
+    
+    variable_split <- make_splits(split_train, 
+                                  split_test)
+    
+    cat(paste0("\nDefining ML specs for ", variable_predict))
+    
+    # Recipe with ML steps
+    ml_recipe <- 
+      recipe(Variable ~ ., data = split_train) |> 
+      update_role(DAid, new_role = "id") |> 
+      step_normalize(all_numeric_predictors()) |> 
+      step_nzv(all_numeric_predictors()) |> 
+      #step_corr(all_numeric_predictors()) |> 
+      step_impute_knn(all_numeric_predictors())
+    
+    # LASSO model specifications
+    glmnet_specs <- 
+      linear_reg() |> 
+      set_mode("regression") |> 
+      set_engine("glmnet") |> 
+      set_args(penalty = tune(), 
+               mixture = 1) 
+    
+    # ML workflow
+    glmnet_wflow <-
+      workflow() |> 
+      add_recipe(ml_recipe) |> 
+      add_model(glmnet_specs) 
+    
+    # Define glmnet grid
+    set.seed(213)
+    glmnet_grid <-
+      glmnet_wflow |>
+      extract_parameter_set_dials() |>
+      grid_latin_hypercube(size = 20)
+    
+    # Define the resamples (CV)
+    set.seed(213)
+    ml_rs <- vfold_cv(split_train, v = 10, strata = Variable)
+    
+    
+    # Define control_grid
+    set.seed(213)
+    ctrl <- control_grid(save_pred = TRUE, parallel_over = "everything") 
+    
+    cat(paste0("\nFitting glmnet model for ", variable_predict))
+    
+    # Glmnet grid search
+    set.seed(213)
+    glmnet_res <-
+      glmnet_wflow |>
+      tune_grid(
+        resamples = ml_rs,
+        grid = glmnet_grid,
+        control = ctrl
+      )
+    
+    predictions_train <- 
+      glmnet_res |> 
+      collect_predictions()
+    
+    metrics_train <- 
+      glmnet_res |> 
+      collect_metrics()
+    
+    cat(paste0("\nSelecting best performing model for ", variable_predict))
+    
+    # Select best hyperparameter
+    best_glmnet <- 
+      select_best(glmnet_res, metric = "rmse") |> 
+      select(-.config)
+    
+    #Finalize the workflow and fit the final model
+    glmnet_wflow <- 
+      glmnet_wflow |>  
+      finalize_workflow(best_glmnet)
+    
+    final_glmnet_fit <- last_fit(glmnet_wflow, variable_split) 
+    
+    # Extract model performance
+    performance <- 
+      final_glmnet_fit |> 
+      collect_metrics() |> 
+      select(-.config, -.estimator)
+    
+    glmnet_metrics <- 
+      final_glmnet_fit |> 
+      collect_metrics() |> 
+      filter(.metric == "rmse") 
+    
+    # Extract protein importance
+    important_proteins <- 
+      final_glmnet_fit |> 
+      extract_fit_parsnip()  |> 
+      vip::vi(lambda = best_glmnet$penalty, event_level = "second")  |> 
+      mutate(
+        Importance = abs(Importance),
+        Variable = fct_reorder(Variable, Importance)
+      )
+    
+    #write_tsv(important_proteins, paste(path_save, "/important_proteins_", variable_predict, "_seed_", seed, ".tsv", sep = ""))
+    
+    # Extract model predictions
+    predictions <- 
+      final_glmnet_fit |> 
+      collect_predictions(summarize = F) 
+    
+    # Add performance
+    #write_tsv(predictions, paste(path_save, "/predictions_", variable_predict, "_seed_", seed, ".tsv", sep = ""))
+    
+    return(list("penalty" = best_glmnet,
+                "glmnet_model" = glmnet_res,
+                "predictions_train" = predictions_train, 
+                "performance_train" = metrics_train,
+                "final_workflow" = glmnet_wflow,
+                "final_fit" = final_glmnet_fit,
+                "predictions" = predictions,
+                "performance" = performance,
+                "important_proteins" = important_proteins))
+  }
+
+
+
