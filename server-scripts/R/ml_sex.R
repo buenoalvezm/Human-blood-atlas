@@ -14,7 +14,7 @@ library(future.callr)
 
 # Read functions and data
 source("R/functions_ml.R", encoding="utf-8")
-resource_meta <- read_csv("data/meta_phase1_pandisease_20250226.tsv")
+resource_meta <- read_csv("data/disease_meta_phase1.tsv")
 
 
 # Create directory to save results and set seed 
