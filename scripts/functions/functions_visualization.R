@@ -826,16 +826,13 @@ plot_donut <-
         geom_text(aes(label = ifelse(n > 25, n, "")),  
                   position = position_stack(vjust = 0.5),  
                   color = "white", size = 4) +
-        theme(legend.position = "bottom")
+        theme(legend.position = "right")
       
     } else if (type == "platform") {
       
       donut_data <- 
         tibble(Assay = proteins) |> 
-        left_join(olink_targets |> 
-                    mutate(Platform = case_when(Platform == "HT" ~ "Olink Explore HT",
-                                                Platform == "3K" ~ "Olink Explore 3072",
-                                                Platform == "1.5K" ~ "Olink Explore 1463")), by = "Assay") |> 
+        left_join(olink_targets, by = "Assay") |> 
         count(Platform) |> 
         mutate(percentage = n / sum(n) * 100, 
                label = paste0(Platform, " (", n, ")"))  
@@ -852,7 +849,7 @@ plot_donut <-
         geom_text(aes(label = ifelse(n > 25, n, "")),  
                   position = position_stack(vjust = 0.5),  
                   color = "white", size = 4) +
-        theme(legend.position = "bottom")
+        theme(legend.position = "right")
       
     } else if (type == "concentration") {
       
@@ -877,7 +874,7 @@ plot_donut <-
         geom_text(aes(label = ifelse(n > 25, n, "")),  
                   position = position_stack(vjust = 0.5),  
                   color = "white", size = 4) +
-        theme(legend.position = "bottom")
+        theme(legend.position = "right")
       
       
     }else if (type == "protein class") {
@@ -903,7 +900,7 @@ plot_donut <-
         geom_text(aes(label = ifelse(n > 25, n, "")),  
                   position = position_stack(vjust = 0.5),  
                   color = "white", size = 4) +
-        theme(legend.position = "bottom")
+        theme(legend.position = "right")
       
       
     } else if (type == "block") {
@@ -928,7 +925,7 @@ plot_donut <-
         geom_text(aes(label = ifelse(n > 25, n, "")),  
                   position = position_stack(vjust = 0.5),  
                   color = "black", size = 4) +
-        theme(legend.position = "bottom")
+        theme(legend.position = "right")
       
       
     } else {
