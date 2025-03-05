@@ -22,7 +22,10 @@ pal_anova_wellness <-  c("age" = "#75C8AE",
                          "subject" = "#ABC8F6",
                          "month_of_sampling" = "#686594")    
 
-pal_sex <- c("F" = "#8B759E", "M" = "#A3D0B4")
+pal_sex <- c("F" = "#8B759E", "M" = "#C3E3AF")
+
+pal_mm <- c("Fixed effects (age & sex)" = "#83A49F", 
+            "Random effects (subject)" = "#F6C9C5")
 
 # Palette for disease class
 getPalette3 = colorRampPalette(brewer.pal(8, "Set2"))
