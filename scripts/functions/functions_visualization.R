@@ -828,7 +828,36 @@ plot_donut <-
                   color = "white", size = 4) +
         theme(legend.position = "right")
       
-    } else if (type == "platform") {
+    } else if (type == "secretome-condensed") {
+    
+      donut_data <- 
+        tibble(Assay = proteins) |> 
+        left_join(secretome_hpa |> 
+                    select(Gene, `Secretome location`), by = c("Assay" = "Gene")) |> 
+        mutate(`Secretome location` = case_when(is.na(`Secretome location`) ~ "Not secreted", 
+                                                `Secretome location` == "Intracellular and membrane" ~ "Not secreted", 
+                                                `Secretome location`== "Secreted to blood" ~ "Actively secreted to blood",
+                                                T ~ "Secreted to other locations")) |> 
+        mutate(`Secretome location` = factor(`Secretome location`, levels = c("Actively secreted to blood", "Secreted to other locations", "Not secreted"))) |> 
+        count(`Secretome location`) |> 
+        mutate(percentage = n / sum(n) * 100, 
+               label = paste0(`Secretome location`, " (", n, ")"))  
+      
+      # Donut plot
+      donut_data |> 
+        ggplot(aes(x = 2, y = n, fill = `Secretome location`)) + 
+        geom_bar(stat = "identity", width = 1, color = "white", show.legend = legend) +  
+        coord_polar(theta = "y") +  
+        xlim(1, 2.5) +  
+        theme_void() +
+        theme(legend.position = "none") +
+        scale_fill_manual(values = pal_secretome_condensed) +
+        geom_text(aes(label = ifelse(n > 25, n, "")),  
+                  position = position_stack(vjust = 0.5),  
+                  color = "white", size = 4) +
+        theme(legend.position = "right")
+    }
+    else if (type == "platform") {
       
       donut_data <- 
         tibble(Assay = proteins) |> 
