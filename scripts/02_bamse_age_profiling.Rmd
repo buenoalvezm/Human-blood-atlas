@@ -262,7 +262,31 @@ variance_explained |>
         axis.text.x = element_blank()) +
   ylab("Variance explained (%)")
 
-ggsave(savepath_results("Publication-figures", "MM-variance-explained.pdf"), h = 4, w = 18)
+ggsave(savepath_results("Manuscript-figures", "Fig2_MM-variance-explained.pdf"), h = 5, w = 14)
+```
+
+## Examples main
+
+```{r}
+variance_explained |> 
+  filter(Component == "Fixed effects (age & sex)") |> 
+ # filter(Component == "Random effects (subject)") |> 
+  arrange(-Variance)
+
+data_bamse |> 
+  filter(Assay %in% c("CD33", "AMBN")) |> 
+  mutate(Assay = factor(Assay, levels = c("CD33", "AMBN"))) |> 
+  left_join(meta_bamse, by = "DAid") |> 
+  mutate(Visit = factor(Visit)) |> 
+  ggplot(aes(Visit, NPX, color = Sex, group = Subject)) +
+  geom_point() +
+  geom_line(show.legend = F, alpha = 7) +
+  scale_color_manual(values = pal_sex) +
+  facet_wrap(~Assay, nrow = 1, scale = "free") +
+  theme_hpa() +
+  theme(legend.position = "top")
+
+ggsave(savepath_results("Manuscript-figures", "BAMSE-MM-example-individual.pdf"), h = 3.5, w = 6)
 ```
 
 
@@ -285,7 +309,7 @@ labels_age <-
 volcano_plot_age <- 
   dat_age |> 
   ggplot(aes(x = estimate, y = -log10(p.value), color = sig, label = Assay)) +
-  geom_point(size = 1, alpha = 0.4, show.legend = F) + 
+  geom_point(size = 1, alpha = 0.4) + 
   geom_text_repel(data = labels_age, size = 2, show.legend = F) +
   geom_hline(yintercept = -log10(0.05), linetype = 'dashed', color = "darkgrey") +
   scale_color_manual(values = pal_de) +
@@ -308,15 +332,18 @@ boxplots_age <-
          Visit = factor(Visit)) |>
   ggplot(aes(Visit, NPX, color = Visit)) +
   geom_line(aes(group = Subject), alpha = 0.3, color = "grey80") +
-  geom_quasirandom(alpha = 0.7, show.legend = F) +
+  geom_quasirandom(alpha = 0.7) +
   geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
   scale_color_manual(values = pal_bamse) +
   facet_wrap(~Assay, scales = "free_y", nrow = 2) +
-  theme_hpa(axis_x = F) 
+  theme_hpa() +
+  theme(legend.position = "top",
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank())
   
 volcano_plot_age + boxplots_age
 
-ggsave(savepath_results("Publication-figures", "Fig2c_Fig2d.pdf"), h = 5, w = 12)
+ggsave(savepath_results("Manuscript-figures", "Fig2c_Fig2d.pdf"), h = 5, w = 12)
 ```
 
 ## Sex
@@ -337,7 +364,7 @@ labels_sex <-
 volcano_plot_sex <- 
   dat_sex |> 
   ggplot(aes(x = estimate, y = -log10(p.value), color = sig, label = Assay)) +
-  geom_point(size = 1, alpha = 0.4, show.legend = F) + 
+  geom_point(size = 1, alpha = 0.4) + 
   geom_text_repel(data = labels_sex, size = 2, show.legend = F) +
   geom_hline(yintercept = -log10(0.05), linetype = 'dashed', color = "darkgrey") +
   scale_color_manual(values = pal_de) +
@@ -359,11 +386,14 @@ boxplots_sex <-
   mutate(Assay = factor(Assay, levels = top_sex_proteins$Assay)) |>
   ggplot(aes(Sex, NPX, color = Sex)) +
   geom_line(aes(group = subject), alpha = 0.3, color = "grey80") +
-  geom_quasirandom(alpha = 0.7, show.legend = F) +
+  geom_quasirandom(alpha = 0.7) +
   geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
   #scale_color_manual(values = pal_bamse) +
   facet_wrap(~Assay, scales = "free_y", nrow = 2) +
-  theme_hpa(axis_x = F) 
+  theme_hpa(axis_x = F) +
+  theme(legend.position = "top",
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank())
 
 boxplots_sex <- 
   data_bamse |> 
@@ -377,10 +407,13 @@ boxplots_sex <-
   geom_quasirandom(alpha = 0.7) +
   scale_color_manual(values = pal_sex) +
   facet_wrap(~Assay, scales = "free_y", nrow = 2) +
-  theme_hpa(axis_x = F) 
+  theme_hpa() +
+  theme(legend.position = "top",
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank())
 
 volcano_plot_sex + boxplots_sex
 
-ggsave(savepath_results("Publication-figures", "Fig2e_Fig2f.pdf"), h = 5, w = 12)
+ggsave(savepath_results("Manuscript-figures", "Fig2e_Fig2f.pdf"), h = 5, w = 12)
 ```
 
