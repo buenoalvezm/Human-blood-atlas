@@ -172,7 +172,7 @@ plot_id <-
 
 plot_lod / plot_id +
   plot_layout(heights = c(10,1))
-ggsave(savepath_results("Publication-figures", "LOD_per_sample_names.pdf"), h = 4, w = 15) 
+ggsave(savepath_results("Manuscript-figures", "LOD_per_sample_names.pdf"), h = 4, w = 15) 
 ```
 
 ## Save detectability
@@ -249,6 +249,11 @@ block_donut <-
 (secretome_donut | platform_donut | block_donut) +
   plot_layout(guides = 'collect')
 ggsave(savepath_results("Manuscript-figures", "FigS1b.pdf"), h = 10, w = 10)
+
+
+
+plot_donut(proteins_above_LOD_80$Assay, type = "secretome-condensed", legend = F) | plot_donut(proteins_below_LOD_80$Assay, type = "secretome-condensed") 
+ggsave(savepath_results("Manuscript-figures", "Fig1e.pdf"), h = 4, w = 8)
 ```
 
 ## Histogram
@@ -337,7 +342,7 @@ protein_detectability |>
   scale_fill_manual(values = pal_secretome_condensed) +
   theme_hpa()
 
-#ggsave(savepath_results("Manuscript-figures", "secretome_LOD.pdf"), h = 6, w = 7)
+ggsave(savepath_results("Manuscript-figures", "secretome_LOD.pdf"), h = 5, w = 7)
 ```
 
 
