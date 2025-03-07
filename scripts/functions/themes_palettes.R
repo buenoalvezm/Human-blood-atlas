@@ -2,10 +2,10 @@
 library(RColorBrewer)
 
 # Palettes
-pal_detectability <- c("None" = "#FF7176",
-                       "Some: < 50%" = "#E8A29A",
-                       "Some: > 50%" = "#AFB8B4",
-                       "All" = "#174A45")
+pal_detectability <- c("None" = "#DF7176", #FF7176
+                       "Some: < 50%" = "#F0BEC1",#E8A29A
+                       "Some: > 50%" = "#DFE2E1", #AFB8B4
+                       "All" = "#3E6964") #174A45
 
 pal_wellness_individuals <- colorRampPalette(brewer.pal(12, "Paired"))(96)
 
@@ -115,7 +115,7 @@ pal_ucan <- c("LUNG" = "#ADC74F",
 
 # Themes
 theme_hpa <- 
-  function(angled = F, axis_x = T, axis_y = T, facet_title = T) {
+  function(angled = F, axis_x = T, axis_x_title = F, axis_y = T, facet_title = T) {
     t <- 
       theme(
         panel.grid.major = element_blank(), 
@@ -150,6 +150,12 @@ theme_hpa <-
               axis.ticks.x = element_blank(),
               axis.line.x = element_blank(),
               axis.title.x = element_blank())
+    } 
+    
+    if(axis_x_title == T) {
+      t <- t +
+        theme(axis.text.x = element_blank(),
+              axis.ticks.x = element_blank())
     } 
     
     if(axis_y == F) {
