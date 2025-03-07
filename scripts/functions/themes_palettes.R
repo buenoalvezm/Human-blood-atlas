@@ -107,11 +107,21 @@ pal_secreted <- c("Secreted to blood" = "#B30000",
                   "Immunoglobulin genes" = "#6BA592",
                   "Unknown" = "grey80")
 
-pal_ucan <- c("LUNG" = "#ADC74F",
-              "CRC" = "#B89B74", 
-              "BRC" = "#E8A29A",
-              "OVC" = "#603479",
-              "PRC" = "#E7662B")
+pal_ucan <- c("Lung cancer" = "#ADC74F",
+              "Colorectal cancer" = "#B89B74", 
+              "Breast cancer" = "#E8A29A",
+              "Ovarian cancer" = "#603479",
+              "Prostate cancer" = "#E7662B")
+
+pal_ucan_replication <- c("Replicated from Olink Explore 1463" = "#E6998D",
+                          "New from Olink Explore HT" = "#5F4A8B",
+                          "Other" = "grey")
+
+pal_ucan_replication <- c("Replicated from Olink Explore 1463" = "#F4A261",  # Warm muted orange  
+                          "New from Olink Explore HT" = "#2A9D8F",  # Teal/green-blue  
+                          "Other" = "#A0A0A0")  # Neutral gray  
+
+
 
 # Themes
 theme_hpa <- 
