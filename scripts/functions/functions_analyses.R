@@ -95,15 +95,15 @@ do_anova <- function(df, protein) {
     mutate(Protein = protein) |> 
     relocate(Protein) 
   
-  # Residuals analysis: Normality and Homoscedasticity
-  residual_normality <- shapiro.test(residuals(model))  # Shapiro-Wilk test (p > 0.05 suggests normality)
-  homoscedasticity <- car::leveneTest(residuals(model) ~ factor(df_protein$Disease), data = df_protein)  # Levene's test for equal variance
-  
-  # Add residual test results to the output
-  tidy_anova <- 
-    tidy_anova |> 
-    mutate(Residual_Normality_P = residual_normality$p.value,
-           Homoscedasticity_P = homoscedasticity$`Pr(>F)`[1])
+  # # Residuals analysis: Normality and Homoscedasticity
+  # residual_normality <- shapiro.test(residuals(model))  # Shapiro-Wilk test (p > 0.05 suggests normality)
+  # homoscedasticity <- car::leveneTest(residuals(model) ~ factor(df_protein$Disease), data = df_protein)  # Levene's test for equal variance
+  # 
+  # # Add residual test results to the output
+  # tidy_anova <- 
+  #   tidy_anova |> 
+  #   mutate(Residual_Normality_P = residual_normality$p.value,
+  #          Homoscedasticity_P = homoscedasticity$`Pr(>F)`[1])
   
   return(tidy_anova)
   
@@ -141,13 +141,25 @@ match_samples <-  function(metadata,
                            case, 
                            control) {
   
-  if(case %in% female_diseases) {
+  n_males <- 
+    metadata |> 
+    filter(Disease == case,
+           Sex == "M") |> 
+    nrow()
+  
+  n_females <- 
+    metadata |> 
+    filter(Disease == case,
+           Sex == "F") |> 
+    nrow()
+  
+  if(n_males == 0 & n_females > 0) {
     
     metadata <- 
       metadata |> 
       filter(Sex == "F")
     
-  } else if (case %in% male_diseases) {
+  } else if (n_males > 0 & n_females == 0) {
     
     metadata <- 
       metadata |> 
@@ -164,8 +176,8 @@ match_samples <-  function(metadata,
            !is.na(Age)) |> 
     mutate(Disease = factor(Disease, levels = c(control, case)))
   
-  if(case %in% c(male_diseases, female_diseases)) {
-    
+  if(n_males == 0 | n_females == 0) {
+     
     set.seed(213)
     output <- matchit(
       Disease ~ Age,
@@ -206,6 +218,18 @@ do_limma_disease <-
       rename(Group = Disease) %>% 
       mutate(Group = ifelse(Group == disease, "1_Case", "0_Control")) 
     
+    n_males <- 
+      metadata |> 
+      filter(Disease == case,
+             Sex == "M") |> 
+      nrow()
+    
+    n_females <- 
+      metadata |> 
+      filter(Disease == case,
+             Sex == "F") |> 
+      nrow()
+    
     
     if(correct == T) {
       dat <- 
@@ -220,7 +244,7 @@ do_limma_disease <-
     # Design a model
     if(correct == T) {
       
-      if(disease %in% c(male_diseases, female_diseases)) {
+      if(n_males == 0 | n_females == 0) {
         design <- model.matrix(~0 + as.factor(dat$Group) + dat$Age) 
         colnames(design) <- c("control", "case", "Age")
       } else if(disease %in% pediatric_diseases & controls == "Healthy") {

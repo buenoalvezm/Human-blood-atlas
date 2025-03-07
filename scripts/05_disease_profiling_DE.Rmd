@@ -181,19 +181,39 @@ de_diseases <-
       filter(Disease != disease,
              Disease != "Healthy") 
     
+    n_males <- 
+      meta_disease |> 
+      filter(Disease == disease,
+             Sex == "M") |> 
+      nrow()
+    
+    n_females <- 
+      meta_disease |> 
+      filter(Disease == disease,
+             Sex == "F") |> 
+      nrow()
+    
     # Filter controls based on gender-specific diseases
-    if(disease %in% female_diseases) {
+    if(n_males == 0 & n_females > 0) {
       
       diseases_control <- 
-        diseases_control |> 
-        filter(!Disease %in% male_diseases) |> 
+        meta_disease |> 
+        filter(!Disease %in% disease,
+               Disease != "Healthy") |> 
+        group_by(Disease) |> 
+        count(Sex) |> 
+        filter(Sex == "F") |> 
         pull(Disease)
       
-    } else if (disease %in% male_diseases) {
+    } else if (n_males > 0 & n_females == 0) {
       
       diseases_control <- 
-        diseases_control |> 
-        filter(!Disease %in% female_diseases) |> 
+        meta_disease |> 
+        filter(!Disease %in% disease,
+               Disease != "Healthy") |> 
+        group_by(Disease) |> 
+        count(Sex) |> 
+        filter(Sex == "M") |> 
         pull(Disease)
       
     } else {
@@ -226,7 +246,6 @@ de_diseases <-
       mutate(Disease = ifelse(Disease == disease, disease, "Control")) |> 
       select(DAid = DAid, Disease, Sex, Age, BMI)
     
-    
     disease_data <- 
       data_disease |> 
       filter(DAid %in% disease_meta$DAid) |> 
@@ -238,7 +257,7 @@ de_diseases <-
                        metadata = disease_meta,
                        disease = disease,
                        cutoff = 0.5,
-                       controls = "ALl other diseases",
+                       controls = "All other diseases",
                        correct = T)
     
   })
@@ -253,8 +272,8 @@ combined_de <-
   bind_rows(de_diseases) |> 
   mutate(adj.P.Val = ifelse(adj.P.Val == 0, 1e-320, adj.P.Val))
 
-saveRDS(combined_de, savepath_data("DE_v6", "combined_de.rds"))
-combined_de <- readRDS(savepath_data("DE_v6", "combined_de.rds"))
+saveRDS(combined_de, savepath_data("DE", "combined_de.rds"))
+combined_de <- readRDS(savepath_data("DE", "combined_de.rds"))
  
 # Save to excel
 library(xlsx)
