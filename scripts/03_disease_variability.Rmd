@@ -59,7 +59,6 @@ anova_res |>
 ## Visualize
 
 ```{r}
-
 dat <- 
   anova_res |> 
   group_by(Protein) |> 
@@ -73,20 +72,18 @@ top_variance <-
   distinct(Protein) |> 
   pull()
 
-plot_overall <- 
+#plot_overall <- 
   dat |> 
   ggplot(aes(x = reorder(Protein, -Total_variance), y = Eta2_perc, fill = term)) +
   geom_col() +
-    geom_vline(xintercept = 40, color = "grey", linetype = "dashed", size = 0.5) +
-
-  theme_hpa(angled = T, axis_x = F) +
+  #geom_vline(xintercept = 40, color = "grey", linetype = "dashed", size = 0.5) +
+  theme_hpa(angled = T, axis_x_title = T) +
   scale_fill_manual(values = pal_anova) +
-  ylab("% of variance explained") +
-  xlab("") 
+  ylab("Variance explained (%)") +
+  xlab("Proteins") 
 
 
-ggsave(savepath("anova_DA.pdf"), h = 4, w = 13)
-ggsave(savepath("anova_DA.png"), h = 4, w = 13)
+ggsave(savepath_results("Manuscript-figures", "anova_DA.pdf"), h = 4, w = 13)
 
 # Top proteins
 plot_top <- 
@@ -137,14 +134,41 @@ dat |>
 
 
 #Top protein for age, sex, BMI
+
+dat_gdf15 <- 
+  data_disease |> 
+  filter(Assay == "GDF15") |> 
+  left_join(meta_disease |> 
+              select(DAid, Sex, Class), by = "DAid")  
+  
+order_gdf15 <- 
+  dat_gdf15 |> 
+  group_by(Class) |>
+  summarise(mean = mean(NPX, na.rm = T)) |> 
+  arrange(mean)
+
 p1 <- 
-  resource_data |> 
+  dat_gdf15 |> 
+  mutate(Class = factor(Class, levels = order_gdf15$Class)) |>
+  ggplot(aes(Class, NPX, color = Class, fill = Class)) +
+  geom_quasirandom(alpha = 0.6, show.legend = F) +
+  geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
+  # geom_text(aes(label = "adj p-value = 1.16e-297")) +
+  scale_color_manual(values = pal_class) +
+  scale_fill_manual(values = pal_class) +
+  theme_hpa(axis_x_title = T) +
+  ggtitle("GDF15")  +
+  xlab("Disease class")
+
+p2 <- 
+  data_disease |> 
   filter(Assay == "CGA") |> 
-  left_join(resource_meta |> 
+  left_join(meta_disease |> 
               select(DAid, Sex, Class), by = "DAid") |> 
   filter(!is.na(Sex)) |> 
   mutate(Sex = case_when(Sex == "M" ~ "Male",
-                         Sex == "F" ~ "Female")) |> 
+                         Sex == "F" ~ "Female"),
+         Sex = factor(Sex, levels = c("Male", "Female"))) |> 
   ggplot(aes(Sex, NPX, color = Class, fill = Class)) +
   geom_quasirandom(alpha = 0.6, show.legend = F) +
   geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
@@ -154,10 +178,10 @@ p1 <-
   theme_hpa() +
   ggtitle("CGA") 
 
-p2 <- 
-  resource_data |> 
+p3 <- 
+  data_disease |> 
   filter(Assay == "EDA2R") |> 
-  left_join(resource_meta |> 
+  left_join(meta_disease |> 
               select(DAid, Age, Class), by = "DAid") |> 
   filter(!is.na(Age)) |> 
   ggplot(aes(Age, NPX, color = Class)) +
@@ -167,10 +191,10 @@ p2 <-
   theme_hpa() +
   ggtitle("EDA2R")
   
-p3 <- 
-  resource_data |> 
+p4 <- 
+  data_disease |> 
   filter(Assay == "LEP") |> 
-  left_join(resource_meta |> 
+  left_join(meta_disease |> 
               select(DAid, BMI, Class), by = "DAid") |> 
   filter(!is.na(BMI),
          BMI != 0) |> 
@@ -181,9 +205,9 @@ p3 <-
   theme_hpa() +
   ggtitle("LEP")
 
-p1 / p2 / p3
+p3 | p4 | p1 | p2
 
-ggsave(savepath("age_sex_bmi_prots.pdf"), h = 13, w = 3.5)
+ggsave(savepath_results("Manuscript-figures", "age_sex_bmi_prots.pdf"), h = 3, w = 12)
 
 
 dat |>  
