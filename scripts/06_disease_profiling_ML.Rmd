@@ -16,8 +16,8 @@ source("scripts/functions/functions_visualization.R")
 source("scripts/functions/themes_palettes.R")
 
 # Read in data
-data_disease <- read_tsv("data/data_phase1_pandisease_curated_20250226.tsv")
-meta_disease <- read_tsv("data/meta_phase1_pandisease_20250226.tsv")
+data_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_data_phase1.tsv")
+meta_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_meta_phase1.tsv")
 ```
 
 ## Disease order
@@ -88,13 +88,13 @@ random_splits <-
                                     variable_stratify = "Disease",
                                     seed = seed))
 
-saveRDS(random_splits, "server-scripts/data/random_splits.rds")
+#saveRDS(random_splits, "server-scripts/data/random_splits.rds")
 ```
 
 ## Read results from cluster 
 
 ```{r}
-ml_multiclass <- readRDS("scripts/random/summer/parsed-results/multiclass_multiclass_results.rds")
+ml_multiclass <- readRDS("server-scripts/parsed-results/multiclass_multiclass_results.rds")
 
 ml_class <- 
   map(c("Cardiovascular", "Metabolic", "Cancer", "Autoimmune", "Infection"), \(class) {
@@ -111,9 +111,46 @@ ml_healthy <-
   })
 
 ml_multiclass$predictions
+
+
+# Importances
+importances_all <- read_tsv("server-scripts/parsed-results/importances_disease_all.tsv")
+importances_class <- read_tsv("server-scripts/parsed-results/importances_disease_class.tsv")
+importances_healthy <- read_tsv("server-scripts/parsed-results/importances_disease_healthy.tsv")
+
+# Performance
+predictions_all <- read_tsv("server-scripts/parsed-results/predictions_disease_all.tsv")
+predictions_class <- read_tsv("server-scripts/parsed-results/roc_disease_class.tsv")
+
+# ROC
+roc_all <- read_tsv("server-scripts/parsed-results/roc_disease_all.tsv")
+roc_class <- read_tsv("server-scripts/parsed-results/roc_disease_class.tsv")
+roc_healthy <- read_tsv("server-scripts/parsed-results/roc_healthy_seed1.tsv")
+
 ```
 
 ## Feature importance
+
+```{r}
+importances_class |> 
+  group_by(class, Seed) |> 
+  summarise(n = n_distinct(term)) |> 
+  left_join(meta_disease |> 
+              distinct(Disease, Class), by = c("class" = "Disease")) |> 
+  # filter(class =="Coronary artery calcification",
+  #        n > 250)
+  
+    mutate(class = factor(class, levels = disease_class_order_ml)) |>
+  ggplot(aes(class, n, color = Class, group = Seed)) +
+  geom_quasirandom() +
+  geom_line(color = "grey90") +
+ # geom_boxplot(fill = NA, color = "black", outlier.colour = NA) +
+  scale_color_manual(values = pal_class) +
+  theme_hpa(angled = T)
+
+```
+
+
 ### Extracts importances
 
 ```{r}
@@ -178,7 +215,7 @@ multiclass_importance <- ml_multiclass$protein_importance
 ### Protein importance for example diseases
 
 ```{r}
-multiclass_importance  |> 
+importances_all  |> 
   distinct(class) |> 
   filter(!class %in% include_diseases)
 
@@ -190,7 +227,7 @@ example_diseases <- c("Acute myeloid leukemia",
                       "Schizophrenia")
 
 
-multiclass_importance |> 
+importances_all |> 
   mutate(class = ifelse(class == "Scleroderma", "Systemic sclerosis", class)) |> 
   group_by(class, term) |> 
   summarise(avg_estimate = mean(estimate)) |> 
@@ -198,7 +235,7 @@ multiclass_importance |>
   top_n(n = 20, wt = abs(avg_estimate)) |> 
   arrange(class, avg_estimate) |> 
   mutate(Names = paste(class, avg_estimate)) |> 
-  left_join(resource_meta |> 
+  left_join(meta_disease |> 
               distinct(Disease, Class), by = c("class" = "Disease")) |> 
   filter(class %in% example_diseases) |> 
   #filter(class != "Healthy") |> 
@@ -667,22 +704,82 @@ do_roc <- function(predictions) {
 
 ### Plot AUC comparison
 
+```{r}
+roc_class |> 
+  distinct(Group, Seed, AUC) |> 
+  left_join(meta_disease |> 
+              distinct(Group = Disease, Class)) |> 
+  mutate(Group = factor(Group, levels = disease_class_order)) |> 
+  ggplot(aes(Group, AUC, color = Class)) +
+  geom_quasirandom() +
+  geom_boxplot(fill =NA, outlier.colour = NA) +
+  scale_color_manual(values = pal_class) +
+  theme_hpa(angled = T)
+
+
+all_summary <- 
+  roc_all |> 
+  distinct(Group, Seed, AUC) |> 
+  group_by(Group) |> 
+  summarise(mean_auc = mean(AUC),
+            sd_auc = sd(AUC)) |> 
+  mutate(Type = "All diseases")
+
+class_summary <- 
+  roc_class |> 
+  distinct(Group, Seed, AUC) |> 
+  group_by(Group) |> 
+  summarise(mean_auc = mean(AUC),
+            sd_auc = sd(AUC)) |> 
+  mutate(Type = "Class")
+
+
+all_summary |> 
+  bind_rows(class_summary)|> 
+  bind_rows(roc_healthy |> 
+  distinct(Group = Class, mean_auc = AUC, Type)) |> 
+  left_join(meta_disease |> 
+              distinct(Group = Disease, Class)) |> 
+  mutate(Group = factor(Group, levels = disease_class_order)) |> 
+  ggplot(aes(Group, mean_auc, color = Type)) +
+  geom_point() +
+  geom_segment(aes(x = Group, xend = Group, 
+                   y = mean_auc - sd_auc, 
+                   yend = mean_auc + sd_auc)) +
+  scale_color_manual(values = c("#B39BC8","#D9B382","#C75D4D")) +
+  facet_grid(~Class, scales = "free_x", space = "free") +
+ # scale_color_manual(values = pal_class) +
+  theme_hpa(angled = T)
+
+ggsave(savepath_results("Manuscript-figures", "auc_comparison.pdf"), width = 12, height = 5)
+
+"#B39BC8"
+"#D9B382"
+"#C75D4D"
+
+```
+
+
 ### Plot ROC for selected diseases
 
 ### Plot confusion matrix
 
 ```{r}
 
-multiclass_predictions |> 
-  mutate(.pred_class = ifelse(.pred_class == "Scleroderma", "Systemic sclerosis", .pred_class),
-         Disease = ifelse(Disease == "Scleroderma", "Systemic sclerosis", Disease),
-         Disease = factor(Disease),
+predictions_all |> 
+  mutate(Disease = factor(Disease),
          .pred_class = factor(.pred_class)) |>
-  rename(`.pred_Systemic sclerosis` = `.pred_Scleroderma`) |>
   conf_mat(truth = Disease, estimate = .pred_class)  |> 
   plot_cm(percentage = T) 
 
-ggsave(savepath("confusion_matrix_multiclass.pdf"), width = 10, height = 10)
+# predictions_all |>
+#   filter(Seed == 13) |>
+#   mutate(Disease = factor(Disease),
+#          .pred_class = factor(.pred_class)) |>
+#   conf_mat(truth = Disease, estimate = .pred_class)  |>
+#   plot_cm(percentage = T)
+
+ggsave(savepath_results("Manuscript-figures", "confusion_matrix_multiclass.pdf"), width = 10, height = 10)
 ```
 
 
