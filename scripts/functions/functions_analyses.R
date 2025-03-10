@@ -220,13 +220,13 @@ do_limma_disease <-
     
     n_males <- 
       metadata |> 
-      filter(Disease == case,
+      filter(Disease == disease,
              Sex == "M") |> 
       nrow()
     
     n_females <- 
       metadata |> 
-      filter(Disease == case,
+      filter(Disease == disease,
              Sex == "F") |> 
       nrow()
     
@@ -865,6 +865,180 @@ generate_split <- function(data,
 # }
 # 
 # 
+
+
+# Function to run lasso pipeline for prediction of discrete variables
+discrete_prediction <-  
+  function(variable_predict,
+           variable_case,
+           split_train, 
+           split_test,
+           seed) {
+    
+    cat(paste0("\nPreparing training and testing data for ", variable_predict))
+    
+    split_train <- 
+      split_train |> 
+      rename(Variable = !!sym(variable_predict)) |> 
+      mutate(Variable = case_when(Variable == variable_case ~ paste0("1_", Variable),
+                                  Variable != variable_case ~ paste0("0_Control"))) |> 
+      mutate(Variable = factor(Variable))
+    
+    split_test <- 
+      split_test |> 
+      rename(Variable = !!sym(variable_predict)) |> 
+      mutate(Variable = case_when(Variable == variable_case ~ paste0("1_", Variable),
+                                  Variable != variable_case ~ paste0("0_Control"))) |> 
+      mutate(Variable = factor(Variable))
+    
+    variable_split <- make_splits(split_train, 
+                                  split_test)
+    
+    
+    cat(paste0("\nDefining ML specs for ", variable_predict))
+    
+    # Recipe with ML steps
+    discrete_recipe <- 
+      recipe(Variable ~ ., data = split_train) |> 
+      step_relevel(Variable, ref_level = "0_Control") |> 
+      update_role(DAid, new_role = "id") |> 
+      step_normalize(all_numeric()) |> 
+      step_nzv(all_numeric()) |> 
+      # step_corr(all_numeric()) |> 
+      step_impute_knn(all_numeric())
+    
+    # LASSO model specifications
+    glmnet_specs <- 
+      logistic_reg() |> 
+      set_mode("classification") |> 
+      set_engine("glmnet") |> 
+      set_args(penalty = tune(), 
+               mixture = 1) 
+    
+    # ML workflow
+    glmnet_wflow <-
+      workflow() |> 
+      add_recipe(discrete_recipe) |> 
+      add_model(glmnet_specs) 
+    
+    # Define glmnet grid
+    set.seed(213)
+    glmnet_grid <-
+      glmnet_wflow |>
+      extract_parameter_set_dials() |>
+      grid_latin_hypercube(size = 20)
+    
+    # Define the resamples (CV)
+    set.seed(213)
+    ml_rs <- vfold_cv(split_train, v = 10, strata = Variable)
+    
+    # Define the evaluation metrics (add brier)
+    eval_metrics <- metric_set(roc_auc)
+    
+    # Define control_grid
+    set.seed(213)
+    ctrl <- control_grid(save_pred = TRUE, parallel_over = "everything", event_level = "second") 
+    
+    cat(paste0("\nFitting glmnet model for ", variable_predict))
+    
+    # Glmnet grid search
+    set.seed(213)
+    glmnet_res <-
+      glmnet_wflow |>
+      tune_grid(
+        resamples = ml_rs,
+        grid = glmnet_grid,
+        control = ctrl,
+        metrics = eval_metrics
+      )
+    
+    cat(paste0("\nSelecting best performing model for ", variable_predict))
+    
+    predictions_train <- 
+      glmnet_res |> 
+      collect_predictions()
+    
+    metrics_train <- 
+      glmnet_res |> 
+      collect_metrics()
+    
+    # Select best hyperparameter
+    best_glmnet <- 
+      select_best(glmnet_res, metric = "roc_auc") |> 
+      select(-.config)
+    
+    #Finalize the workflow and fit the final model
+    glmnet_wflow <- 
+      glmnet_wflow |>  
+      finalize_workflow(best_glmnet)
+    
+    final_glmnet_fit <- last_fit(glmnet_wflow, variable_split, metrics = eval_metrics) 
+    
+    # Extract model performance
+    performance <- 
+      final_glmnet_fit |> 
+      collect_metrics() |> 
+      select(-.config, -.estimator)
+    
+    
+    glmnet_auc <- 
+      final_glmnet_fit |> 
+      collect_metrics() |> 
+      filter(.metric == "roc_auc") |> 
+      pull(.estimate) |> 
+      round(2)
+    
+    # Extract protein importance
+    important_proteins <- 
+      final_glmnet_fit |> 
+      extract_fit_parsnip()  |> 
+      vip::vi(lambda = best_glmnet$penalty, event_level = "second")  |> 
+      mutate(
+        Importance = abs(Importance),
+        Variable = fct_reorder(Variable, Importance)
+      )
+    
+    # Extract model predictions
+    predictions <- 
+      final_glmnet_fit |> 
+      collect_predictions(summarize = F) 
+    
+    # Add performance
+    # ROC curve
+    roc <- 
+      predictions |>
+      roc_curve(truth = Variable, paste0(".pred_1_", variable_case))
+    
+    # AUC
+    res <- 
+      predictions |> 
+      rename(prediction = paste0(".pred_1_", variable_case)) 
+    
+    auc <- pROC::auc(res$Variable, res$prediction)
+    ci <- pROC::ci.auc(res$Variable, res$prediction) 
+    
+    # Combine
+    combined_roc_auc <- 
+      roc |> 
+      mutate(AUC = as.numeric(auc),
+             CI_lower = as.numeric(ci)[[1]],
+             CI_upper = as.numeric(ci)[[3]])
+    
+
+    return(list("penalty" = best_glmnet,
+                "glmnet_model" = glmnet_res,
+                "predictions_train" = predictions_train, 
+                "performance_train" = metrics_train,
+                "final_workflow" = glmnet_wflow,
+                "final_fit" = final_glmnet_fit,
+                "predictions" = predictions,
+                "performance" = performance,
+                "auc" = auc,
+                "auc_ci" = ci,
+                "roc_curve" = roc, 
+                "important_proteins" = important_proteins))
+  }
+
 
 #Function to run lasso pipeline for prediction of continuous variables
 continuous_prediction <-  
