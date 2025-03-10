@@ -18,6 +18,7 @@ source("scripts/functions/themes_palettes.R")
 # Read in data
 data_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_data_phase1.tsv")
 meta_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_meta_phase1.tsv")
+ukb_associations <- read_csv("data/UkbUnivariateDiseaseResults/UkbUnivariateDiseaseAssociations.csv")
 ```
 
 ## Disease order
@@ -270,195 +271,270 @@ combined_de <-
   de_healthy |> 
   bind_rows(de_class) |> 
   bind_rows(de_diseases) |> 
-  mutate(adj.P.Val = ifelse(adj.P.Val == 0, 1e-320, adj.P.Val))
+  mutate(adj.P.Val = ifelse(adj.P.Val == 0, 1e-320, adj.P.Val)) |> 
+  select(Disease, Control, Assay, logFC, adj.P.Val, Significance = sig) 
 
 saveRDS(combined_de, savepath_data("DE", "combined_de.rds"))
-combined_de <- readRDS(savepath_data("DE", "combined_de.rds"))
- 
-# Save to excel
-library(xlsx)
-map(classes, function(current_class) {
-  
-  dir.create(paste0("data/processed/DE_ML_resource_v5/", current_class), showWarnings = FALSE)
-  dir.create(paste0("data/processed/DE_ML_resource_v5/", current_class, "/DE"), showWarnings = FALSE)
+write_tsv(combined_de, savepath_data("Supplementary_files", "Data_S6.tsv"))
 
-  diseases_class <- 
-    resource_meta |> 
-    distinct(Disease, Class) |> 
-    filter(Class == current_class) |> 
-    pull(Disease)
-  
-  class_de <- 
-    combined_de |> 
-    filter(Disease %in% diseases_class) |> 
-    mutate(Disease = case_when(Disease == "Staphylococcus aureus bacteremia" ~ "S. aureus bacteremia",
-                               Disease == "Streptococcal soft tissue infection" ~ "S. soft tissue infection",
-                               Disease == "Viral hepatitis related cirrhosis" ~ "Viral related cirrhosis", 
-                               Disease == "Actute venous thromboembolism" ~ "Acute VTE", 
-                               Disease == "Previous venous thromboembolism" ~ "Previous VTE", 
-                               Disease == "Diffuse astrocytic and oligodendro. tumor" ~ "Diffuse astro & oligodendro tumor",
-                               Disease == "Pediatric systemic inflammatory disease" ~ "Systemic inflammatory disease",
-                               Disease == "Pediatric diffuse astrocytic and oligodendro. tumor" ~ "Diffuse astro & oligo tumor",
-                               Disease == "Small intestine neuroendocrine tumor" ~ "Small intestine NET",
-                               T ~ Disease)) |> 
-    select(Disease, Control, Assay, logFC, adj.P.Val, sig) |> 
-    pivot_wider(names_from = Control,
-                values_from = c(logFC, adj.P.Val, sig)) 
-  
-  de_df <-
-    class_de %>%
-    split(.$Disease)
-  
-  write.xlsx(de_df, file = savepath_data("DE_ML_resource_v5", paste0(current_class, "/DE/", current_class, "_DE_results.xlsx")))
-  
-})
+#combined_de <- readRDS(savepath_data("DE", "combined_de.rds"))
 ```
 
-## Visualization
+# Visualization
 
 
-### Summary
+## Summary
 
 ```{r}
 de_plot <- 
   combined_de |> 
-  left_join(resource_meta |> 
+  left_join(meta_disease |> 
               distinct(Disease, Class), by = "Disease") |> 
   mutate(Disease = factor(Disease, levels = rev(disease_class_order)))
 
-labels <- 
-  de_plot |>
-  filter(sig != "not significant") |> 
-  group_by(Control, Disease) |> 
-  top_n(1, -log10(adj.P.Val)) |> 
-   group_by(Control, Disease) |> 
-  do({
-    . |> 
-      head(1)
-  })
-
 dat <- 
   de_plot |> 
-  filter(sig != "not significant") |> 
-  group_by(Control, Disease, Class, sig) |> 
-  count(sig) 
+  group_by(Control, Disease, Class, Significance) |> 
+  count(Significance) 
 
-total_n <- 
+plot_de <- 
   dat |> 
-  group_by(Control, Disease) |> 
-  summarise(n = sum(n))
-
-  dat |> 
-  filter(Control == "ALl other diseases") |> 
-  ggplot(aes(Disease,n, fill = sig, color = sig)) +
-  geom_col(show.legend = F) +
-  geom_text(data = total_n |> filter(Control == "ALl other diseases"), aes(label = n, x = Disease, y = n + 30), vjust = 0.5, show.legend = F, size = 3, inherit.aes = F) +
+  mutate(Control = factor(Control, levels = c("Healthy", "All other diseases", "Class"))) |> 
+  ggplot(aes(Disease,n, fill = Significance, color = Significance)) +
+  geom_col(color = "white", size = 0.1) +
   scale_color_manual(values = pal_de) +
   scale_fill_manual(values = pal_de) +
   coord_flip() +
-  theme_hpa(angled = T) +
-  theme(strip.background = element_blank(),  
-        strip.text = element_blank())   
-  
-  
-
-p1_healthy <- 
-  dat |> 
-  filter(Control == "Healthy") |> 
-  ggplot(aes(Disease,n, fill = sig, color = sig)) +
-  geom_col(show.legend = F) +
-  geom_text(data = total_n |> filter(Control == "Healthy"), aes(label = n, x = Disease, y = n + 30), vjust = 0.5, show.legend = F, size = 3, inherit.aes = F) +
-  scale_color_manual(values = pal_de) +
-  scale_fill_manual(values = pal_de) +
-  scale_y_reverse() +
-  coord_flip() +
+  facet_wrap(~Control) +
   theme_hpa(angled = T, axis_y = F) +
-  theme(strip.background = element_blank(),  
-        strip.text = element_blank())   
+  ylab("Number of proteins")
 
-p1_all_diseases <- 
-  dat |> 
-  filter(Control == "ALl other diseases") |> 
-  ggplot(aes(Disease,n, fill = sig, color = sig)) +
-  geom_col(show.legend = F) +
-  geom_text(data = total_n |> filter(Control == "ALl other diseases"), aes(label = n, x = Disease, y = n + 30), vjust = 0.5, show.legend = F, size = 3, inherit.aes = F) +
-  scale_color_manual(values = pal_de) +
-  scale_fill_manual(values = pal_de) +
-  coord_flip() +
-  theme_hpa(angled = T, axis_y = F) +
-  theme(strip.background = element_blank(),  
-        strip.text = element_blank())   
+plot_disease <- 
+  meta_disease |> 
+  distinct(Disease, Class) |> 
+  filter(Disease != "Healthy") |> 
+  mutate(Disease = factor(Disease, levels = rev(disease_class_order))) |> 
+  ggplot(aes("", Disease, fill = Class)) +
+  geom_tile() +
+  coord_fixed() +
+  scale_fill_manual(values = pal_class) +
+  theme_hpa(axis_x = F) +
+  theme(axis.ticks.y = element_blank(),
+        axis.line.y = element_blank())
 
-p1_class <- 
-  dat |> 
-  filter(Control == "Class") |> 
-  ggplot(aes(Disease,n, fill = sig, color = sig)) +
-  geom_col(show.legend = F) +
-  geom_text(data = total_n |> filter(Control == "Class"), aes(label = n, x = Disease, y = n + 30), vjust = 0.5, show.legend = F, size = 3, inherit.aes = F) +
-  scale_color_manual(values = pal_de) +
-  scale_fill_manual(values = pal_de) +
-  coord_flip() +
-  theme_hpa(angled = T) +
-  theme(strip.background = element_blank(),  
-        strip.text = element_blank())   +
-  xlab("")
+plot_disease + plot_de + 
+  plot_layout(guides = "collect")  # Correct argument name
 
-
-p2_healthy <- 
-  de_plot |> 
-  filter(sig != "not significant",
-         Control == "Healthy") |> 
-  ggplot(aes(Disease, -log10(adj.P.Val), color = sig, fill = sig)) +
-  geom_quasirandom(show.legend = F, size = 0.5) +
-  geom_text(data = labels |> filter(Control == "Healthy"), aes(label = Assay, y = -log10(adj.P.Val) + 20), nudge_y = 0.5, size = 2, show.legend = F) +
-  scale_color_manual(values = pal_de) +
-  coord_flip() +
-  scale_y_reverse() +
-  theme_hpa(angled = T, axis_y = F) 
-
-p2_all_diseases <- 
-  de_plot |> 
-  filter(sig != "not significant",
-         Control == "ALl other diseases") |> 
-  ggplot(aes(Disease, -log10(adj.P.Val), color = sig, fill = sig)) +
-  geom_quasirandom(show.legend = F, size = 0.5) +
-  geom_text(data = labels |> filter(Control == "ALl other diseases"), aes(label = Assay, y = -log10(adj.P.Val) + 20), nudge_y = 0.5, size = 2, show.legend = F) +
-  scale_color_manual(values = pal_de) +
-  coord_flip() +
-  theme_hpa(angled = T, axis_y = F) 
-
-
-p2_class <- 
-  de_plot |> 
-  filter(sig != "not significant",
-         Control == "Class") |> 
-  ggplot(aes(Disease, -log10(adj.P.Val), color = sig, fill = sig)) +
-  geom_quasirandom(show.legend = F, size = 0.5) +
-  geom_text(data = labels |> filter(Control == "Class"), aes(label = Assay, y = -log10(adj.P.Val) + 20), nudge_y = 0.5, size = 2, show.legend = F) +
-  scale_color_manual(values = pal_de) +
-  coord_flip() +
-  theme_hpa(angled = T, axis_y = F) 
-
-p_blank <-   ggplot() + theme_void()
-
-p1_class + p2_class +
-  plot_layout(widths = c(1,2))
-
-ggsave(savepath("de_class.pdf"), h = 12, w = 6)
-ggsave(savepath("de_class.png"), h = 12, w = 8)
-
-p2_healtht + p1_healthy + p_blank + p1_all_diseases + p2_all_diseases +
-  plot_layout(widths = c(2,1,1,1,2))
-
-ggsave(savepath("de_healthy_all.pdf"), h = 12, w = 10)
-
+ggsave(savepath_results("Manuscript-figures", "Supplementary_DE.pdf"), h = 12, w = 12)
 ```
 
 
 
-### Fig 4
+## Network
 
 ```{r}
+differential_expression <- 
+  combined_de |> 
+  filter(Control == "All other diseases",
+         Significance == "significant up"
+         #Significance != "not significant"
+         ) |> 
+  select(proteins= Assay,
+         disease = Disease)
+
+overlap_diseases <- 
+  expand_grid(disease1 = unique(differential_expression$disease), 
+              disease2 = unique(differential_expression$disease))   |> 
+    filter(disease1 != disease2) |> 
+    group_by_all() |> 
+    do({
+      
+      d1 <- .$disease1
+      d2 <- .$disease2
+      
+      disease1 <- 
+        differential_expression |> 
+        filter(disease == d1) |> 
+        pull(proteins)
+      
+      disease2 <- 
+        differential_expression |> 
+        filter(disease == d2) |> 
+        pull(proteins)
+      
+      ov <- length(intersect(disease1, disease2)) 
+      
+      tibble(disease1 = d1,
+             disease2 = d2,
+             overlap = ov)
+      
+    }) 
+
+filtered_overlap <- 
+  overlap_diseases |>
+  group_by(disease1) |>  
+  top_n(3, overlap) |> 
+  ungroup() |>
+  filter(overlap > 150)
+
+graph <- 
+  as_tbl_graph(filtered_overlap, directed = FALSE) |> 
+  activate(nodes) |> 
+  left_join(meta_disease |> 
+              select(name = Disease, Class) |> 
+              distinct(), by = "name")
+
+ggraph(graph, layout = "stress") +
+  geom_edge_link(aes(width = overlap), color = "grey") +
+  geom_node_point(aes(color = Class), size = 10) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  scale_color_manual(values = pal_class) +
+  theme_void() 
+
+ggsave(savepath_results("Manuscript-figures", "Network_de_overlap.pdf"), h = 8, w = 8)
+```
+
+## Overlap
+
+```{r}
+combined_de |> 
+  filter(Control  == "All other diseases") |> 
+  filter(Significance != "not significant") |> 
+  left_join(meta_disease |> 
+              distinct(Disease, Class), by = "Disease") |> 
+  group_by(Class) |> 
+  count(Assay) |> 
+  rename(n_assays = n) |> 
+  count(n_assays) |> 
+  mutate(n_assays = factor(n_assays),
+         Class = factor(Class, levels = class_order)) |> 
+  ggplot(aes(n_assays, n, fill = Class)) +
+  geom_col(show.legend = F) +
+  scale_fill_manual(values = pal_class) +
+  facet_grid(~Class, scale = "free_x", space = "free_x") +
+  theme_hpa(facet_title = F) +
+  ylab("Number of proteins") +
+  xlab("Number of diseases")
+  
+ggsave(savepath_results("Manuscript-figures", "markers_class.pdf"),
+       height = 2.5,
+       width = 12)
+```
+
+## Pleiotropic proteins
+
+```{r}
+dat_overall <- 
+  combined_de |> 
+  filter(Control  == "All other diseases") |> 
+  filter(Significance != "not significant") |> 
+  count(Assay)
+  
+dat_overall |> 
+  ggplot(aes(n)) +
+  geom_histogram()
+
+examples <- 
+  dat_overall |> 
+  arrange(-n) |> 
+  head(35)
+
+
+
+# Compute the top of the stacked bars for each assay
+barplot_data <- 
+  combined_de |> 
+  filter(Control  == "All other diseases",
+         Significance != "not significant",
+         Assay %in% examples$Assay) |> 
+  left_join(meta_disease |> 
+              distinct(Disease, Class), by = "Disease") |> 
+  group_by(Assay) |> 
+  count(Class)
+
+barplot_totals <- 
+  barplot_data |> 
+  group_by(Assay) |> 
+  summarize(y_position = sum(n)) |> 
+  filter(Assay %in% ukb_associations_mortality$Assay)  # Filter for assays in ukb_associations_mortality
+
+
+plot_pleiotropy <- 
+  barplot_data |> 
+  mutate(Assay = factor(Assay, levels = rev(examples$Assay))) |>
+  ggplot(aes(Assay, n, fill = Class)) +
+  geom_col(show.legend = F) +
+  coord_flip() +
+ #  geom_text(data = barplot_totals, aes(x = Assay, y = y_position + 1, label = "*"), 
+  #          inherit.aes = FALSE, size = 5, color = "black", vjust = 0) +  # Add asterisk slightly above the bar
+  scale_fill_manual(values = pal_class) +
+  theme_hpa(angled = T) +
+   xlab("")
+
+# ggsave(savepath_results("Manuscript-figures", "general_disease_markers.pdf"),
+#        height = 3,
+#        width = 10)
+```
+
+### Literature
+
+```{r}
+ukb_associations_mortality <- 
+  ukb_associations |> 
+  filter(phenotype == "All-cause mortality",
+         Assay %in% unique(data_disease$Assay),
+         adjusted_pval < 0.05,
+         hazard_ratio > 1) 
+
+gadd_2024 <- import_df("data/UKB/mortality_Gadd_2024.xlsx")
+
+gadd_2024_mortality <- 
+  gadd_2024 |> 
+  filter(Naming == "Death") |> 
+  rename(Assay = Protein)
+
+you_2024 <- import_df("data/UKB/all_cause_mortality_You_2024.xlsx")
+
+you_2024_mortality <- 
+  you_2024 |> 
+  filter(DiseaseCode == "All-cause mortality") |> 
+  rename(Assay = Pro_code)
+
+
+plot_study <- 
+  examples |>
+  distinct(Assay) |> 
+  mutate(Olink_insight = ifelse(Assay %in% ukb_associations_mortality$Assay, "Yes", "No"),
+         You_2024 = ifelse(Assay %in% you_2024_mortality$Assay, "Yes", "No"),
+         Gadd_2024 = ifelse(Assay %in%  gadd_2024_mortality$Assay, "Yes", "No")) |> 
+  pivot_longer(cols = c(Olink_insight,You_2024,Gadd_2024), 
+               names_to = "Study", values_to = "Mortality") |>
+  mutate(Assay = factor(Assay, levels = rev(examples$Assay)),
+         Study = factor(Study, levels = c("Olink_insight","Gadd_2024","You_2024"))) |> 
+  ggplot(aes(Study, Assay, fill = Mortality)) +
+  geom_tile(color = "white") +
+  coord_fixed() +
+  scale_fill_manual(values = c("grey90", "grey40")) +
+  theme_hpa(angled = T, axis_y = F) +
+  xlab("")
+
+
+```
+
+### Combine
+
+```{r}
+plot_pleiotropy | plot_study
+ggsave(savepath_results("Manuscript-figures", "general_disease_markers.pdf"),
+       height = 10,
+       width = 5)
+```
+
+
+## Specific proteins
+
+```{r}
+
 
 proteins <- c("GFAP", 
               "CA14",
@@ -466,9 +542,24 @@ proteins <- c("GFAP",
               "PRL",
               "SULT1A1")
 
+plot_disease <- 
+  meta_disease |> 
+  distinct(Disease, Class) |> 
+  mutate(Disease = factor(Disease, levels = disease_class_order)) |> 
+  ggplot(aes(Disease, "", fill = Class)) +
+  geom_tile(show.legend = F) +
+  coord_fixed() +
+  scale_fill_manual(values = pal_class) +
+  theme_hpa(axis_y = F, angled = T) +
+  theme(axis.ticks.y = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks = element_blank(),
+        axis.line = element_blank()) +
+  xlab("")
 
-resource_data |> 
-  left_join(resource_meta |> 
+boxplots <- 
+  data_disease |> 
+  left_join(meta_disease |> 
               select(DAid, Disease, Class), by = "DAid") |> 
   filter(Assay %in% proteins) |> 
   mutate(Disease = factor(Disease, levels = disease_class_order)) |> 
@@ -478,25 +569,13 @@ resource_data |>
   scale_color_manual(values = pal_class) + 
   scale_fill_manual(values = pal_class) + 
   facet_wrap(~Assay, scales = "free_y", ncol = 1) +
-  theme_hpa() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
-        axis.ticks.x = element_blank(),
-        axis.line.x = element_blank(),
-        strip.background = element_blank()
-        ) +
+  theme_hpa(axis_x = F) +
+  theme(strip.background = element_blank()) +
   xlab("")
 
-ggsave(savepath("examples_de.pdf"), h = 9, w = 12)
- 
-```
-### Network
+boxplots / plot_disease 
 
-```{r}
-
+ggsave(savepath_results("Manuscript-figures", "examples_de.pdf"), h = 12, w = 18)
 ```
 
-### Overlap
 
-```{r}
-
-```
