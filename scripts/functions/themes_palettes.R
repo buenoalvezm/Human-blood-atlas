@@ -27,6 +27,9 @@ pal_sex <- c("F" = "#8B759E", "M" = "#C3E3AF")
 pal_mm <- c("Fixed effects (age & sex)" = "#83A49F", 
             "Random effects (subject)" = "#F6C9C5")
 
+pal_heat <- colorRampPalette(c("#FFF3E0",  "#FFCC80", "#B7410E"))(100)
+
+
 # Palette for disease class
 getPalette3 = colorRampPalette(brewer.pal(8, "Set2"))
 pal_class<-getPalette3(8)
