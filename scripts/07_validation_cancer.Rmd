@@ -17,39 +17,31 @@ source("scripts/functions/themes_palettes.R")
 
 
 # Read in data - UCAN
-ucan_data <- read_tsv("data/data_phase2_batch2_curated_20250127.tsv") 
-manifest <- import_df("data/samples_2024-12-17.xlsx")
+data_ucan <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/ucan_data_ht_phase2.tsv")
+meta_ucan <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/ucan_meta_ht_phase2.tsv")
 
-# Read in data - pan-disease
-hdba_data <- read_tsv("data/data_hdba_hpa_p1_v24.tsv")
-hdba_meta <- read_tsv("data/meta_hdba_hpa_p1_v24.tsv")
+# # Read in data - pan-disease
+data_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_data_phase1.tsv")
+meta_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_meta_phase1.tsv")
 
-olink_targets <-  import_df("data/overlap_olink_platforms.csv")
+# olink_targets <-  X
 ```
 
 
-## Number of samples
 
 
 ```{r}
-cancers <- c("Breast cancer",
+cancers <- c("Ovarian cancer",
+             "Breast cancer",
+             "Prostate cancer",
              "Colorectal cancer", 
-             "Lung cancer", 
-             "Ovarian cancer",
-             "Prostate cancer")
-ucan_meta <- 
-  hdba_meta |> 
-  filter(Disease %in% cancers)
+             "Lung cancer")
 
 p1 <- 
-  ucan_meta |> 
+  meta_disease |> 
+  filter(Disease %in% cancers)|> 
   count(Disease) |> 
-  mutate(Disease = case_when(Disease == "Breast cancer" ~ "BRC", 
-                             Disease == "Colorectal cancer" ~ "CRC", 
-                             Disease == "Lung cancer" ~ "LUNG", 
-                             Disease == "Ovarian cancer" ~ "OVC", 
-                             Disease == "Prostate cancer" ~ "PRC")) |> 
-  mutate(Disease = factor(Disease, levels = c("LUNG", "CRC", "PRC", "BRC", "OVC"))) |> 
+  mutate(Disease = factor(Disease, levels = rev(cancers))) |> 
   ggplot(aes(Disease, n, fill = Disease)) +
   geom_col(show.legend = F) +
   geom_text(aes(label = n), vjust = 0.5) +
@@ -59,18 +51,12 @@ p1 <-
   xlab("") +
   theme_hpa(axis_y = F)
 
- manifest |> 
-  filter(DAid %in% ucan_data$DAid) |> 
-  filter(Diagnose != "bridge_sample") |> 
-  count(Diagnose) |> pull(n) |> sum() 
- 
 p2 <- 
-  manifest |> 
-  filter(DAid %in% ucan_data$DAid) |> 
-  filter(Diagnose != "bridge_sample") |> 
-  count(Diagnose) |> 
-  mutate(Diagnose = factor(Diagnose, levels = c("LUNG", "CRC", "PRC", "BRC", "OVC"))) |> 
-  ggplot(aes(Diagnose, n, fill = Diagnose)) +
+  meta_ucan |> 
+  filter(DAid %in% data_ucan$DAid) |> 
+  count(Disease) |> 
+  mutate(Disease = factor(Disease, levels = rev(cancers))) |> 
+  ggplot(aes(Disease, n, fill = Disease)) +
   geom_col(show.legend = F) +
   coord_flip() +
   scale_y_continuous(limits = c(0, 500)) +  # Ensure same scale
@@ -83,49 +69,42 @@ p1 + p2
 ggsave(savepath("samples_ucan.pdf"), h = 3, w = 9)
 ```
 
-## Differential expression
+# Differential expression
 
+## Olink Explore HT
 
 ```{r}
-female_diseases <- c("OVC", "BRC")
-male_diseases <- c("PRC")
+female_diseases <- c("Ovarian cancer", "Brest cancer")
+male_diseases <- c("Prostate cancer")
 
-de_ucan <- 
-  map_df(names(pal_ucan), function(cancer) {
+de_ucan_p2 <- 
+  map_df(cancers, function(cancer) {
     
     message("Processing disease: ", cancer)
 
     # Combine disease and control metadata
     disease_meta <- 
-      manifest |> 
-      filter(Cohort == "UCA2",
-             Diagnose %in% names(pal_ucan)) |> 
-      mutate(Disease = ifelse(Diagnose == cancer, cancer, "Control")) |> 
-      select(DAid = DAid, Disease, Sex, Age, BMI)
-    
+      meta_ucan |> 
+      mutate(Disease = ifelse(Disease == cancer, cancer, "Control")) |> 
+      select(DAid = DAid, Disease, Sex, Age) |> 
+      mutate(BMI = NA)
     
     # Filter controls based on gender-specific diseases
     if(cancer %in% female_diseases) {
-      
       disease_meta <- 
         disease_meta |> 
         filter(Sex == "F")
-      
     } else if (cancer %in% male_diseases) {
-      
       disease_meta <- 
         disease_meta |> 
         filter(Sex == "M")
-      
     } else {
-      
       disease_meta <- 
         disease_meta
-      
     }
     
     disease_data <- 
-      ucan_data |> 
+      data_ucan |> 
       filter(DAid %in% disease_meta$DAid) |> 
       select(DAid, Assay, NPX) |> 
       pivot_wider(names_from = "Assay", values_from = "NPX")
@@ -137,180 +116,90 @@ de_ucan <-
                        controls = "Cancers",
                        cutoff = 0.5,
                        correct = F)
-    
   })
 ```
 
-### Summary
+## Olink Explore 1463
 
 ```{r}
-de_ucan_complete <- 
-  map_df(unique(de_ucan$Disease), function(cancer) {
-  
-    sig_ucan_p1 <- 
-  de_ucan_p1 |> 
-  mutate(Cancer = ifelse(Cancer == "LUNGC", "LUNG", Cancer)) |> 
-  filter(Cancer == cancer) |> 
-  filter(Significance != "not significant")
-  
-  de_ucan |> 
-  filter(Disease == cancer) |>
-  left_join(olink_targets, by = "Assay") |> 
-     mutate(Type = case_when(Assay %in% sig_ucan_p1$Assay & sig != "not significant" ~ "Replicated from Explore 1.5K", 
-                          Platform != "1.5K" & sig != "not significant" ~ "New from Explore HT",
-                          T ~ "Other")) 
-  
-})
+de_ucan_p1 <- 
+  map_df(cancers, function(cancer) {
+    
+    message("Processing disease: ", cancer)
 
-de_ucan_complete |> 
-  group_by(Disease) |> 
-  count(Type) |> 
-  filter(Type != "Other") |> 
-  ggplot(aes(Type, n, fill = Type)) +
-  geom_col() +
-  geom_text(aes(label = n), vjust = 0.5) +
-  coord_flip() +
-  scale_color_manual(values = c("#E6998D", "#5F4A8B")) +
-  scale_fill_manual(values = c("#E6998D", "#5F4A8B")) +
-  facet_wrap(~Disease, nrow = 1) +
-  theme_hpa()
-
-ggsave(savepath("summary_ucan.pdf"), h = 2, w = 14)
-
-```
-
-### Top 1
-
-```{r}
-top1_targets <- 
-  de_ucan_complete |>
-  filter(sig == "significant up") |> 
-  filter(Type == "New from Explore HT") |> 
-  filter(Assay != "COL26A1") |> 
-  group_by(Disease) |> 
-  top_n(1, -adj.P.Val) |> 
-  arrange(Disease) |> 
-  mutate(Disease = factor(Disease)) |> 
-  select(Assay, Disease)
-
-
-ucan_data |>
-  filter(NPX > LOD) |> 
-  left_join(manifest |> 
-              select(DAid, Diagnose), by = "DAid") |> 
-  filter(Diagnose %in% unique(de_ucan_complete$Disease)) |> 
-  inner_join(top1_targets) |> 
-  mutate(Assay = factor(Assay, levels = top1_targets$Assay),
-         Cancer = ifelse(Diagnose == Disease, Diagnose, "Other")) |> 
-  ggplot(aes(Diagnose, NPX, fill = Cancer, color = Cancer)) +
-  geom_quasirandom(alpha = 0.7, show.legend = F) +
-  geom_boxplot(
-    alpha = 0.3,
-    outlier.color = NA,
-    color = "grey20",
-    show.legend = F
-  ) +
-  scale_color_manual(values = c(pal_ucan, "Other" = "grey")) +
-  scale_fill_manual(values = c(pal_ucan, "Other" = "grey")) +
-  facet_wrap(~Assay, scales = "free_y", nrow = 1) +
-  theme_hpa(angled = T) +
-  xlab("") 
-
-ggsave(savepath("top1_ucan2.pdf"), h = 3, w = 11)
-
+    # Combine disease and control metadata
+    disease_meta <- 
+      meta_disease |>
+      filter(Disease %in% cancers) |> 
+      mutate(Disease = ifelse(Disease == cancer, cancer, "Control")) |> 
+      select(DAid = DAid, Disease, Sex, Age) |> 
+      mutate(BMI = NA)
+    
+    # Filter controls based on gender-specific diseases
+    if(cancer %in% female_diseases) {
+      disease_meta <- 
+        disease_meta |> 
+        filter(Sex == "F")
+    } else if (cancer %in% male_diseases) {
+      disease_meta <- 
+        disease_meta |> 
+        filter(Sex == "M")
+    } else {
+      disease_meta <- 
+        disease_meta
+    }
+    
+    disease_data <- 
+      data_disease |> 
+      filter(DAid %in% disease_meta$DAid) |> 
+      select(DAid, Assay, NPX) |> 
+      pivot_wider(names_from = "Assay", values_from = "NPX")
+    
+    disease_res <- 
+      do_limma_disease(data_wide = disease_data, 
+                       metadata = disease_meta,
+                       disease = cancer,
+                       controls = "Cancers",
+                       cutoff = 0.5,
+                       correct = F)
+  })
 ```
 
 
-
-## Volcano plots - olink platform
+## Compare
 
 ```{r}
-de_ucan_p1 <- read_tsv("data/ucan_p1.tsv")
-
-volcanos_cancers <- 
-  map(c("BRC", "CRC", "LUNG", "OVC", "PRC"), function(cancer) {
-  sig_ucan_p1 <- 
+comparison_data <- 
   de_ucan_p1 |> 
-  mutate(Cancer = ifelse(Cancer == "LUNGC", "LUNG", Cancer)) |> 
-  filter(Cancer == cancer) |> 
-  filter(Significance != "not significant")
-  
+  select(Assay, logFC_p1 = logFC, adj_pval_p1 = adj.P.Val, Disease) |> 
+  left_join(de_ucan_p2 |> 
+              select(Assay, logFC_p2 = logFC, adj_pval_p2 = adj.P.Val, Disease), by = c("Assay", "Disease")) 
 
-labels <- 
-  de_ucan |> 
-  filter(Disease == cancer) |>
-  left_join(olink_targets, by = "Assay") |> 
-     mutate(Type = case_when(Assay %in% sig_ucan_p1$Assay & sig != "not significant" ~ "Replicated from Explore 1.5K", 
-                          Platform != "1.5K" & sig != "not significant" ~ "New from Explore HT",
-                          T ~ "Other")) |>
-  group_by(Disease) |>
-  top_n(n = 10, wt = -log10(adj.P.Val))
-
-de_ucan |> 
-  filter(Disease == cancer) |>
-  left_join(olink_targets, by = "Assay") |> 
-  mutate(Type = case_when(Assay %in% sig_ucan_p1$Assay & sig != "not significant" ~ "Replicated from Explore 1.5K", 
-                          Platform != "1.5K" & sig != "not significant" ~ "New from Explore HT",
-                          T ~ "Other")) |>
-  mutate(Type = factor(Type, levels = c("Replicated from Explore 1.5K", "New from Explore HT", "Other"))) |> 
-  ggplot(aes(x = logFC, y = -log10(adj.P.Val), color = Type, label = Assay)) +
-  geom_point(size = 1, alpha = 0.4) + 
-  geom_text_repel(data = labels, size = 2, show.legend = F) +
-  geom_hline(yintercept = -log10(0.05), linetype = 'dashed', color = "darkgrey") +
-  geom_vline(xintercept = -cutoff, linetype = 'dashed', color = "darkgrey") +
-  geom_vline(xintercept = cutoff, linetype = 'dashed', color = "darkgrey") +
-  scale_color_manual(values = c("#E6998D", "#5F4A8B", "grey")) +
+fc <- 
+  comparison_data |> 
+  ggplot(aes(logFC_p1, logFC_p2, color = Disease)) +
+  geom_point() +
+  geom_text_repel(aes(label = Assay), show.legend = F) +
   facet_wrap(~Disease, scales = "free", nrow = 1) +
-  theme_hpa() +   
-  theme(axis.text = element_text(size = 8),
-        legend.position = "top") 
-})
-
-volcanos_cancers[[1]] | volcanos_cancers[[2]] | volcanos_cancers[[3]] | volcanos_cancers[[4]] | volcanos_cancers[[5]]
-
-ggsave(savepath("ucan_volcanos.pdf"), h = 4.5, w = 15)
-```
-
-## Comparison to P1
-
-```{r}
-de_ucan_p1 <- read_tsv("data/previous_studies/ucan_p1.tsv")
-
-de_p1_p2 <- 
-  de_ucan_p1 |> 
-  filter(Cancer %in% c("BRC", "CRC", "LUNGC", "OVC", "PRC")) |> 
-  mutate(Cancer = ifelse(Cancer == "LUNGC", "LUNG", Cancer)) |> 
-  select(Assay, Cancer, logFC_P1 = NPX_difference, adj_pval_P1 = p.adjusted) |>
-  left_join(de_ucan |> 
-               select(Assay, Cancer = Disease, logFC_P2 = logFC, adj_pval_P2 = adj.P.Val), by = c("Assay", "Cancer")) 
-
-p_fc <- de_p1_p2 |> 
-  ggplot(aes(x = logFC_P1, y = logFC_P2, color = Cancer)) +
-  geom_point() +
-  facet_wrap(~Cancer, scales = "free", nrow = 1) +
-  geom_label_repel(aes(label = Assay), show.legend = F) +
-  geom_hline(yintercept = 0, color = "grey", lty = "dashed") +
-  geom_vline(xintercept = 0, color = "grey", lty = "dashed") +
   scale_color_manual(values = pal_ucan) +
-  theme_hpa() 
-
-p_pval <- 
-  de_p1_p2 |> 
-  ggplot(aes(x = -log10(adj_pval_P1), y = -log10(adj_pval_P2), color = Cancer)) +
-  geom_point() +
-  facet_wrap(~Cancer, scales = "free", nrow = 1) +
-  geom_label_repel(aes(label = Assay), show.legend = F) +
-  scale_color_manual(values = pal_ucan) +
-  geom_hline(yintercept = -log10(0.05), color = "grey", lty = "dashed") +
-  geom_vline(xintercept = -log10(0.05), color = "grey", lty = "dashed") +
   theme_hpa()
 
-p_fc / p_pval
 
-ggsave(savepath("p1_p2_ucan.png"), h = 10, w = 16)
+pval <- 
+  comparison_data |> 
+  ggplot(aes(-log10(adj_pval_p1), -log10(adj_pval_p2), color = Disease)) +
+  geom_point() +
+  geom_text_repel(aes(label = Assay), show.legend = F) +
+  facet_wrap(~Disease, scales = "free", nrow = 1) +
+  scale_color_manual(values = pal_ucan) +
+  theme_hpa()
+
+fc / pval
 ```
 
-## Examples
+# Markers
+
+## Replicates
 
 ```{r}
 proteins <- c("EGFR",
@@ -384,11 +273,203 @@ ggsave(savepath("examples.png"), h = 7, w = 10)
 
 
 
+## Top examples HT
+
+```{r}
+proteins <- c("EGFR",
+              "LGALS4",
+              "CXCL17", 
+              "PAEP",
+              "FAP")
+
+top1_targets <- 
+  de_ucan_complete |>
+  filter(sig == "significant up") |> 
+  filter(Type == "New from Olink Explore HT") |> 
+  filter(Assay != "COL26A1") |> 
+  group_by(Disease) |> 
+  top_n(1, -adj.P.Val) |> 
+  arrange(Disease) |> 
+  mutate(Disease = factor(Disease)) |> 
+  select(Assay, Disease)
+
+data_ucan |>
+  filter(NPX > LOD) |> 
+  left_join(meta_ucan, by = "DAid") |> 
+  filter(Assay %in% top1_targets$Assay) |> 
+ # inner_join(top1_targets) |> 
+  mutate(Assay = factor(Assay, levels = top1_targets$Assay),
+         Disease = factor(Disease, levels = cancers)) |> 
+  ggplot(aes(Disease, NPX, fill = Disease, color = Disease)) +
+  geom_quasirandom(alpha = 0.7, show.legend = F) +
+  geom_boxplot(
+    alpha = 0.3,
+    outlier.color = NA,
+    color = "grey20",
+    show.legend = F
+  ) +
+  scale_color_manual(values = c(pal_ucan, "Other" = "grey")) +
+  scale_fill_manual(values = c(pal_ucan, "Other" = "grey")) +
+  facet_wrap(~Assay, scales = "free_y", nrow = 1) +
+  theme_hpa(angled = T) +
+  xlab("") 
+
+ggsave(savepath("top1_ucan2.pdf"), h = 3, w = 11)
+
+```
 
 
-## Machine learning
 
-### Phase 1
+## Volcano plots 
+
+```{r}
+volcanos_cancers <- 
+  map(cancers, function(cancer) {
+    sig_ucan_p1 <- 
+      de_ucan_p1 |> 
+      filter(Disease == cancer) |> 
+      filter(sig != "not significant")
+    
+    
+    labels <- 
+      de_ucan_p2 |> 
+      filter(Disease == cancer) |>
+      left_join(olink_targets, by = "Assay") |> 
+      mutate(Type = case_when(Assay %in% sig_ucan_p1$Assay & sig != "not significant" ~ "Replicated from Olink Explore 1463", 
+                              Platform != "Olink Explore 1463" & sig != "not significant" ~ "New from Olink Explore HT",
+                              T ~ "Other")) |> 
+  group_by(Disease) |>
+  top_n(n = 5, wt = -log10(adj.P.Val))
+
+de_ucan_p2 |> 
+  filter(Disease == cancer) |>
+  left_join(olink_targets, by = "Assay") |> 
+  mutate(Type = case_when(Assay %in% sig_ucan_p1$Assay & sig != "not significant" ~ "Replicated from Olink Explore 1463", 
+                              Platform != "Olink Explore 1463" & sig != "not significant" ~ "New from Olink Explore HT",
+                              T ~ "Other")) |> 
+  ggplot(aes(x = logFC, y = -log10(adj.P.Val), color = Type, label = Assay)) +
+  geom_point(size = 1, alpha = 0.4) + 
+  geom_text_repel(data = labels, size = 2, show.legend = F) +
+  geom_hline(yintercept = -log10(0.05), linetype = 'dashed', color = "darkgrey") +
+  geom_vline(xintercept = -0.5, linetype = 'dashed', color = "darkgrey") +
+  geom_vline(xintercept = 0.5, linetype = 'dashed', color = "darkgrey") +
+  scale_color_manual(values = pal_ucan_replication) +
+  facet_wrap(~Disease, scales = "free", nrow = 1) +
+  theme_hpa() +   
+  theme(axis.text = element_text(size = 8),
+        legend.position = "top") 
+})
+
+
+
+volcanos_cancers[[1]] | volcanos_cancers[[2]] | volcanos_cancers[[3]] | volcanos_cancers[[4]] | volcanos_cancers[[5]]
+
+ggsave(savepath("ucan_volcanos.pdf"), h = 4.5, w = 15)
+```
+
+
+
+# Machine learning
+
+## Proteins
+
+```{r}
+importances_all <- read_tsv("server-scripts/parsed-results/importances_disease_all.tsv")
+importances_class <- read_tsv("server-scripts/parsed-results/importances_disease_class.tsv")
+
+top_importances_all <- 
+  importances_all |> 
+  filter(class %in% cancers,
+         abs(estimate) > 0) |> 
+  group_by(class, term) |> 
+  summarise(estimate = mean(abs(estimate))) |> 
+  top_n(10, estimate) |> 
+  select(-estimate)
+
+p1 <- importances_all |> 
+  inner_join(top_importances_all, by = c("class", "term")) |>
+  mutate(term = reorder_within(term, estimate, class)) |> 
+  ggplot(aes(fct_reorder(term, estimate), estimate, color = class)) +
+  geom_quasirandom() +
+  geom_boxplot(fill = NA, outlier.color = NA) +
+  facet_wrap(~class, scales = "free_y", nrow = 1) +
+  coord_flip() +
+      scale_x_reordered() +  # Ensures correct ordering within facets
+  scale_color_manual(values = pal_ucan) +
+  theme_hpa() +
+  xlab("")
+
+
+top_importances_class <- 
+  importances_class |> 
+  filter(class %in% cancers,
+         abs(estimate) > 0) |> 
+  group_by(class, term) |> 
+  summarise(estimate = mean(abs(estimate))) |> 
+  top_n(5, estimate) |> 
+  select(-estimate)
+
+p2 <- 
+  importances_class |> 
+  inner_join(top_importances_class, by = c("class", "term")) |>
+  mutate(term = reorder_within(term, estimate, class)) |> 
+  ggplot(aes(term,estimate, color = class)) +
+  geom_quasirandom() +
+  geom_boxplot(fill = NA, outlier.color = NA) +
+  facet_wrap(~class, scales = "free_y", nrow = 1) +
+  coord_flip() +
+    scale_x_reordered() +  # Ensures correct ordering within facets
+
+  scale_color_manual(values = pal_ucan) +
+  theme_hpa() +
+  xlab("")
+
+p1/
+  
+```
+
+
+## Lung test
+
+```{r}
+lung_cancer <- c("ABHD14B", "CXCL17", "BMP4", "CEACAM5")
+
+
+ucan_p1_wide <- 
+  data_disease |> 
+  filter(DAid %in% ucan_meta$DAid) |> 
+  select(DAid, Assay, NPX) |> 
+  pivot_wider(names_from = Assay, values_from = NPX) |>
+  left_join(ucan_meta |> 
+              select(DAid, Disease), by = "DAid")
+ucan_p1_split <- 
+  generate_split(data = ucan_p1_wide, 
+               proportion = 0.7,
+               seed = 213,
+               variable_stratify = "Disease")
+
+train_lung <- 
+  ucan_p1_split$data_train |> 
+  select(DAid, Disease, all_of(lung_cancer)) |> 
+  mutate(Disease = ifelse(Disease == "Lung cancer", "Lung cancer", "Other"))
+
+test_lung <- 
+  ucan_p1_split$data_test |> 
+  select(DAid, Disease, all_of(lung_cancer)) |> 
+  mutate(Disease = ifelse(Disease == "Lung cancer", "Lung cancer", "Other"))
+
+lung_results <- 
+  discrete_prediction(variable_predict = "Disease",
+                      variable_case = "Lung cancer", 
+                      split_train = train_lung, 
+                      split_test = test_lung,
+                      seed = 213)
+lung_results$
+```
+
+
+## Phase 1
+
 
 ```{r}
 # Lists of diseases
@@ -416,12 +497,137 @@ ucan_p1_split <-
                seed = 213,
                variable_stratify = "Disease")
 
+
+
+
+models_ucan_p1 <- 
+  map(all_cancers, function(cancer) {
+    
+     cat(paste0("\nPreparing training and testing data for ", cancer))
+    
+    ucan_data <- 
+      ucan_p1_wide |> 
+      rename(Variable = Disease) |> 
+      mutate(Variable = case_when(Variable == cancer ~ paste0("1_", Variable),
+                                  Variable != cancer ~ paste0("0_Control"))) |> 
+      mutate(Variable = factor(Variable))
+    
+  
+    # Recipe with ML steps
+    discrete_recipe <- 
+      recipe(Variable ~ ., data = ucan_data) |> 
+      step_relevel(Variable, ref_level = "0_Control") |> 
+      update_role(DAid, new_role = "id") |> 
+      step_normalize(all_numeric()) |> 
+      step_nzv(all_numeric()) |> 
+      # step_corr(all_numeric()) |> 
+      step_impute_knn(all_numeric())
+    
+    # LASSO model specifications
+    glmnet_specs <- 
+      logistic_reg() |> 
+      set_mode("classification") |> 
+      set_engine("glmnet") |> 
+      set_args(penalty = tune(), 
+               mixture = 1) 
+    
+    # ML workflow
+    glmnet_wflow <-
+      workflow() |> 
+      add_recipe(discrete_recipe) |> 
+      add_model(glmnet_specs) 
+    
+    # Define glmnet grid
+    set.seed(213)
+    glmnet_grid <-
+      glmnet_wflow |>
+      extract_parameter_set_dials() |>
+      grid_latin_hypercube(size = 20)
+    
+    # Define the resamples (CV)
+    set.seed(213)
+    ml_rs <- vfold_cv(ucan_data, v = 10, strata = Variable)
+    
+    # Define the evaluation metrics
+    eval_metrics <- metric_set(roc_auc)
+    
+    # Define control_grid
+    set.seed(213)
+    ctrl <- control_grid(save_pred = TRUE, parallel_over = "everything", event_level = "second") 
+    
+    cat(paste0("\nFitting glmnet model for ", cancer))
+    
+    # Glmnet grid search
+    set.seed(213)
+    glmnet_res <-
+      glmnet_wflow |>
+      tune_grid(
+        resamples = ml_rs,
+        grid = glmnet_grid,
+        control = ctrl,
+        metrics = eval_metrics
+      )
+    
+    cat(paste0("\nSelecting best performing model for ", cancer))
+    
+    predictions_train <- 
+      glmnet_res |> 
+      collect_predictions()
+    
+    predictions_train <- 
+      glmnet_res |> 
+      collect_predictions() |> 
+      roc_curve(truth = Variable, colnames(predictions_train)[[1]]) 
+    
+    metrics_train <- 
+      glmnet_res |> 
+      collect_metrics()
+    
+    # Select best hyperparameter
+    best_glmnet <- 
+      select_best(glmnet_res, metric = "roc_auc") |> 
+      select(-.config)
+    
+    #Finalize the workflow and fit the final model
+    glmnet_wflow <- 
+      glmnet_wflow |>  
+      finalize_workflow(best_glmnet)
+    
+    # Final fit
+    final_glmnet_fit <- fit(glmnet_wflow, data = ucan_data)
+
+    # Extract proteins    
+    protein_importance <- 
+      final_glmnet_fit |> 
+      extract_fit_parsnip() |> 
+      tidy() |> 
+      filter(estimate != 0,
+             term != "intercept") 
+    
+    return(list(disease = cancer,
+                model = final_glmnet_fit,
+                metrics_train = metrics_train,
+                protein_importance = protein_importance))
+ 
+  }) |> 
+  set_names(all_cancers)
+
+models_ucan_p1 <- 
+  models_ucan_p1 |> 
+  set_names(all_cancers)
+
+
+
+
+#########
+
 # Run for all cancers
 ucan_p1_ml <- 
   map(all_cancers, ~ do_lasso_binary(disease = .x,
                                      metadata = ucan_meta,
                                      split_train = ucan_p1_split$data_train, 
-                                     split_test = ucan_p1_split$data_test))
+                                     split_test = ucan_p1_split$data_test)) |> 
+  set_names
 
 saveRDS(ucan_p1_ml, savepath_data("ML", "ucan_p1_ml.rds"))
 
@@ -435,27 +641,58 @@ ovc_p1$important_proteins
 
 ```
 
-### Phase 2
+## Plots P1
 
 ```{r}
-# Prepare metadata Olink HT
-ucan_meta_p2 <- 
-  manifest |> 
-  filter(DAid %in% ucan_data$DAid) |> 
-  filter(Diagnose != "bridge_sample") |>
-  mutate(Disease = case_when(Diagnose == "BRC" ~ "Breast cancer", 
-                             Diagnose == "CRC" ~ "Colorectal cancer", 
-                             Diagnose == "LUNG" ~ "Lung cancer", 
-                             Diagnose == "OVC" ~ "Ovarian cancer", 
-                             Diagnose == "PRC"~ "Prostate cancer"))  
+
+```
+
+## Proteins P1
+
+```{r}
+
+```
+
+## Phase 2
+
+```{r}
 # Prepare data
 ucan_p2_wide <- 
-  ucan_data |> 
-  filter(DAid %in% ucan_meta_p2$DAid) |> 
+  data_ucan |> 
   select(DAid, Assay, NPX) |> 
   pivot_wider(names_from = Assay, values_from = NPX) |>
-  left_join(ucan_meta_p2 |> 
+  left_join(meta_ucan |> 
               select(DAid, Disease), by = "DAid")
+
+
+results_ucan_p1 <- 
+  map(all_cancers, function(cancer) {
+    
+    current_data <- 
+      ucan_p2_wide |> 
+      mutate(Variable = case_when(Disease == cancer ~ paste0("1_", Variable),
+                                  Disease != cancer ~ paste0("0_Control"))) |> 
+      select(-Disease)
+    
+    current_model <- ucan_p1_ml[[cancer]]$model
+    
+    new_predictions <- predict(models_ucan_p1[[1]]$final_model, new_data = current_data, type = "prob")
+    
+    # Make roc curve
+
+    
+  })
+
+
+
+
+
+new_predictions
+
+
+
+
+
 
 # Split data
 ucan_p2_split <- 
@@ -491,7 +728,7 @@ ovc_p2$important_proteins |> filter(Importance > 0) |>
 
 ```
 
-### Combine ROC
+## Combine ROC
 
 ```{r}
 ucan_p1_ml[[1]]$auc
