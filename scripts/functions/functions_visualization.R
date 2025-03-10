@@ -11,6 +11,8 @@ library(ggplotify)
 library(pheatmap)
 library(plotly)
 library(ggridges)
+library(ggraph)
+library(tidygraph)
 
 do_pca <- function(data,
                    meta = NULL,
@@ -279,14 +281,14 @@ plot_cm <- function(confusion_matrix,
                     percentage = F) {
   
   ann_row <- 
-    resource_meta |> 
+    meta_disease |> 
     distinct(Class, Disease) |> 
     filter(Disease %in% include_diseases) |> 
     rename(`True class` = Class) |> 
     column_to_rownames("Disease") 
   
   ann_col <- 
-    resource_meta |> 
+    meta_disease |> 
     distinct(Class, Disease) |> 
     filter(Disease %in% include_diseases) |> 
     rename(`Predicted class` = Class) |> 
@@ -1001,6 +1003,55 @@ boxplot_ukb <- function(cancer, protein) {
   #      axis.text = element_blank()) #+
   #  ylab("Protein expression") +
   # xlab("Time to diagnosis") 
+  
+}
+
+
+plot_importance_frequency <- function(importances, type) {
+  
+  dat_imp_freq <- 
+    importances |> 
+    group_by(Variable) |> 
+    summarise(avg_importance = mean(abs(Importance))) |> 
+    arrange(-avg_importance)  |> 
+    left_join(importances |>
+                filter(Importance > 0) |> 
+                count(Variable), by = "Variable") |> 
+    mutate(Type = type) 
+  
+  
+  dat_imp_freq |> 
+    ggplot(aes(avg_importance, n)) +
+    geom_point(color = pal_anova[type]) +
+    geom_text_repel(data = filter(dat_imp_freq, avg_importance > 0.5),
+                    aes(label = Variable), size = 3) +
+    theme_hpa() +
+    ggtitle(type)
+}
+
+plot_top_proteins_seed <- function(protein_importance, 
+                                   plot_color = "grey20",
+                                   n = 25) {
+  
+  top_proteins <- 
+    protein_importance |> 
+    filter(Importance > 0) |> 
+    group_by(Variable) |> 
+    summarise(avg_importance = mean(abs(Importance)),
+              n = n_distinct(Seed)) |> 
+    arrange(-avg_importance) |> 
+    head(n)
+  
+  protein_importance |> 
+    filter(Variable %in% top_proteins$Variable) |> 
+    mutate(Variable = factor(Variable, levels = rev(top_proteins$Variable))) |> 
+    ggplot(aes(fct_reorder(Variable, abs(Importance)), abs(Importance))) +
+    geom_quasirandom(size = 0.5, color = plot_color) +
+    geom_boxplot(alpha = 0.5, outlier.color = NA, fill = plot_color) +
+    coord_flip() +
+    xlab("")  +
+    ylab("Protein importance") +
+    theme_hpa() 
   
 }
 
