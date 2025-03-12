@@ -125,7 +125,9 @@ pal_ucan_replication <- c("Replicated from Olink Explore 1463" = "#F4A261",  # W
                           "Other" = "#A0A0A0")  # Neutral gray  
 
 
-
+pal_controls<- c("All other diseases" = "#B39BC8",
+                 "Class" = "#D9B382",
+                 "Healthy"= "#C75D4D")
 # Themes
 theme_hpa <- 
   function(angled = F, axis_x = T, axis_x_title = F, axis_y = T, facet_title = T) {
