@@ -491,6 +491,9 @@ p_age <-
   theme_hpa() +
   xlab("Number of proteins") +
   ylab("Performance (R2)")
+
+p_age
+ggsave(savepath_results("Manuscript-figures", "Age_model.pdf"), h = 5, w = 5)
 ```
 
 ### Specific 
@@ -826,8 +829,8 @@ p2 <-
   scale_color_manual(values = pal_class) +
   theme_hpa()
 
-p1 / p2
-ggsave(savepath_results("Manuscript-figures", "Fig3c-d_examples_age.pdf"), h = 8, w = 4)
+p1 + p2
+ggsave(savepath_results("Manuscript-figures", "Fig3c-d_examples_age.pdf"), h = 4, w = 8)
 
 p2
 ggsave(savepath_results("Manuscript-figures", "col9a1_age.pdf"), h = 4, w = 4)
