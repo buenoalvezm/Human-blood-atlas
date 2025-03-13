@@ -275,7 +275,7 @@ combined_de <-
   select(Disease, Control, Assay, logFC, adj.P.Val, Significance = sig) 
 
 saveRDS(combined_de, savepath_data("DE", "combined_de.rds"))
-write_tsv(combined_de, savepath_data("Supplementary_files", "Data_S6.tsv"))
+write_tsv(combined_de, savepath_data("Supplementary-files", "Data_S6.tsv"))
 
 #combined_de <- readRDS(savepath_data("DE", "combined_de.rds"))
 ```
