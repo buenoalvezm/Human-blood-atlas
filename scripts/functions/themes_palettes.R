@@ -53,7 +53,7 @@ pediatric_diseases <- c("Pediatric CNS tumor",
                         "Pediatric long COVID",
                         "Pediatric systemic inflammatory disease")
 
-pal_ukb_2 <- 
+pal_ukb <- 
   c("Healthy" = "grey",
     "> 7 years before" = "#4D7654", 
     "5-7 years before" = "#748B5F", 
@@ -81,17 +81,17 @@ getPalette3 = colorRampPalette(brewer.pal(8, "Set2"))
 pal_class<-getPalette3(8)
 names(pal_class)<-c("Psychiatric","Cardiovascular","Cancer","Autoimmune","Pediatric","Infection","Metabolic","Healthy") 
 
-
-pal_platforms <- 
-  c("Olink Explore HT" = "#D69DCA",
-    "Olink Explore 3072" = "#B2D1B8", 
-    "Olink Explore 1463" = "#A7C7E7")
+pal_platforms <- c("Olink Explore HT" = "#79B1A8",  # Warm muted orange  
+                   "Olink Explore 3072" = "#CB9FC9",
+                  "Olink Explore 1563" = "#E8B27F")  # Neutral gray  
+# pal_platforms <- 
+#   c("Olink Explore HT" = "#D69DCA",
+#     "Olink Explore 3072" = "#B2D1B8", 
+#     "Olink Explore 1463" = "#A7C7E7")
 
 pal_binary <- 
   c("Yes" = "red",
     "No" = "grey")
-
-
 
 
 pal_secretome_condensed <- c("Actively secreted to blood" = "#B30000", 
@@ -123,6 +123,9 @@ pal_ucan_replication <- c("Replicated from Olink Explore 1463" = "#E6998D",
 pal_ucan_replication <- c("Replicated from Olink Explore 1463" = "#F4A261",  # Warm muted orange  
                           "New from Olink Explore HT" = "#2A9D8F",  # Teal/green-blue  
                           "Other" = "#A0A0A0")  # Neutral gray  
+
+pal_platform <- c("Olink Explore 1463" = "#F4A261",  # Warm muted orange  
+                  "Olink Explore HT" = "#2A9D8F")  # Neutral gray  
 
 
 pal_controls<- c("All other diseases" = "#B39BC8",
