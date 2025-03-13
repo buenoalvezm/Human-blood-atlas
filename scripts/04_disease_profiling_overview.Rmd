@@ -120,7 +120,7 @@ bmi_plot <-
   theme_hpa(angled = T, axis_y = F) 
 
 sex_plot | age_plot | bmi_plot
-ggsave(savepath_results("Manuscript_figures", "S_Fig_cohort_overview_ridges.pdf"), h = 14, w = 12)
+ggsave(savepath_results("Manuscript-figures", "S_Fig_cohort_overview_ridges.pdf"), h = 14, w = 12)
 ```
 
 ## Sample UMAP 
