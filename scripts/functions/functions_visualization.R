@@ -997,7 +997,7 @@ boxplot_ukb <- function(cancer, protein) {
     #facet_wrap(Cancer_name~Assay, scales = "free_y", nrow = 1) +
     scale_color_manual(values = pal_ukb_2) +
     scale_fill_manual(values = pal_ukb_2) +
-    theme_hpa(axis_x = F) +
+    theme_hpa(axis_x_title = T) +
     ggtitle(paste0(protein, " - ", cancer))
   # theme(axis.ticks = element_blank(),
   #      axis.text = element_blank()) #+
