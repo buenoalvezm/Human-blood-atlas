@@ -214,7 +214,6 @@ variance_explained <-
 saveRDS(mixed_model_all_proteins, "data/processed/MM_estimates_BAMSE.rds")
 saveRDS(variance_explained, "data/processed/MM_variance_BAMSE.rds")
 
-
 write_excel_csv(mixed_model_all_proteins, savepath_data("Supplementary-files", "Data_S3_BAMSE_estimates.csv"))
 write_excel_csv(variance_explained, savepath_data("Supplementary-files", "Data_S3_BAMSE_variance.csv"))
 ```
@@ -304,7 +303,9 @@ dat_age <-
 
 labels_age <- 
   dat_age |> 
-  top_n(n = 10, wt = -log10(p.value)) 
+  group_by(sig) |>
+  top_n(n = 3, wt = -log10(p.value)) |> 
+  filter(sig != "not significant") 
 
 volcano_plot_age <- 
   dat_age |> 
@@ -359,7 +360,9 @@ dat_sex <-
                          TRUE ~ "not significant"))
 labels_sex <- 
   dat_sex |> 
-  top_n(n = 10, wt = -log10(p.value)) 
+  group_by(sig) |>
+  top_n(n = 3, wt = -log10(p.value)) |> 
+  filter(sig != "not significant") 
 
 volcano_plot_sex <- 
   dat_sex |> 
