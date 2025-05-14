@@ -277,7 +277,51 @@ combined_de <-
 saveRDS(combined_de, savepath_data("DE", "combined_de.rds"))
 write_tsv(combined_de, savepath_data("Supplementary-files", "Data_S6.tsv"))
 
-#combined_de <- readRDS(savepath_data("DE", "combined_de.rds"))
+combined_de <- readRDS(savepath_data("DE", "combined_de.rds"))
+```
+
+# Review
+
+```{r}
+
+combined_de_ext <- 
+  combined_de |> 
+  mutate(Significance_FC1_pval05 = case_when(logFC > 1 & adj.P.Val < 0.05 ~ "significant up",
+                                              logFC < -1 & adj.P.Val < 0.05 ~ "significant down",
+                                              T ~ "not significant"),
+         Significance_FC05_pval005 = case_when(logFC > 0.5 & adj.P.Val < 0.005 ~ "significant up",
+                                              logFC < -0.5 & adj.P.Val < 0.005 ~ "significant down",
+                                              T ~ "not significant"),
+         Significance_FC1_pval005 = case_when(logFC > 1 & adj.P.Val < 0.005 ~ "significant up",
+                                              logFC < -1 & adj.P.Val < 0.005 ~ "significant down",
+                                              T ~ "not significant"),
+         Significance_FC1_pval0005 = case_when(logFC > 1 & adj.P.Val < 0.0005 ~ "significant up",
+                                              logFC < -1 & adj.P.Val < 0.0005 ~ "significant down",
+                                              T ~ "not significant")) |> 
+  rename(Significance_original = Significance)
+
+
+
+combined_de_ext |> 
+  select(-logFC, -adj.P.Val) |> 
+  pivot_longer(cols = c("Significance_original", "Significance_FC1_pval05", "Significance_FC05_pval005", "Significance_FC1_pval005", "Significance_FC1_pval0005"),
+               names_to = "Threshold",
+               values_to = "Significance") |> 
+  group_by(Control, Disease, Threshold) |> 
+  count(Significance) |> 
+  mutate( Disease = factor(Disease, levels = disease_class_order),
+          Threshold = gsub("Significance_", "", Threshold),
+          Threshold = factor(Threshold, levels = c("original", "FC1_pval05", "FC05_pval005", "FC1_pval005", "FC1_pval0005"))) |> 
+  filter(Significance != "not significant") |> 
+  ggplot(aes(Disease, n, fill = Significance)) +
+  geom_col() +
+  geom_text(aes(label = n), position = position_stack(vjust = 0.5), size = 3) +
+  coord_flip() +
+  facet_wrap(Threshold~Control, nrow = 1) +
+  scale_fill_manual(values = pal_de) +
+  theme_hpa()
+
+ggsave(savepath("DE_thresholds.pdf"), h = 13, w = 24)
 ```
 
 # Visualization
@@ -419,6 +463,78 @@ combined_de |>
 ggsave(savepath_results("Manuscript-figures", "markers_class.pdf"),
        height = 2.5,
        width = 12)
+```
+## Enrichment analyses
+
+```{r}
+# Define protein background
+background_proteins <-  
+  data_disease |> 
+  distinct(Assay) |> 
+  pull()
+
+# Run for all diseases and control groups
+controls <- 
+  combined_de |> 
+  distinct(Control) |> 
+  pull()
+
+
+res_enrichment <- 
+  
+  map_df(controls, function(control) {
+    
+    # Filter to significant results from current control group
+    de_class <- 
+      combined_de |> 
+      filter(Significance != "not significant",
+             Control == control)
+    
+    map_df(diseases, function(disease) {
+      
+      message("Performing enrichment analyses. Current disease: ",disease, ", Control: ", control)
+      
+      # Filter to results from current disease
+      de <- 
+        de_class |> 
+        filter(Disease == disease)
+      
+      # Extract significant proteins
+      protein_list <- 
+        de |> 
+        pull(Assay)
+      
+      de_enrichment <- 
+        do_ora(protein_list, 
+               database = "GO",
+               background = background_proteins)
+      
+      if(is.null(de_enrichment)) {
+        return(NULL)
+      } else {
+        de_enrichment@result |> 
+          as_tibble() |> 
+          mutate(Disease = disease,
+                 Control = control) |> 
+          relocate(Disease, Control)
+      }
+      
+    })
+    
+  })
+
+
+
+
+
+
+
+
+
+barplot(de_enrichment)
+
+plot_ora(de_enrichment, intersect_proteins, ncateg = 5)
+
 ```
 
 ## Pleiotropic proteins
