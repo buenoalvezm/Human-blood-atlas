@@ -13,6 +13,8 @@ library(plotly)
 library(ggridges)
 library(ggraph)
 library(tidygraph)
+library(ggrain)
+library(ggExtra)
 
 do_pca <- function(data,
                    meta = NULL,
@@ -980,7 +982,7 @@ boxplot_ukb <- function(cancer, protein) {
                              time_to_diagnosis > -1 & time_to_diagnosis <= 1 ~ "1 year before/after",
                              time_to_diagnosis > 1 & time_to_diagnosis <= 3 ~ "1-3 years after",
                              time_to_diagnosis > 3 ~ "> 3 years after"),
-           Group = factor(Group, levels = names(pal_ukb_2[-1]))) 
+           Group_2 = factor(Group_2, levels = names(pal_ukb_2))) 
   
   
   plot_dat <- 
@@ -990,7 +992,7 @@ boxplot_ukb <- function(cancer, protein) {
            Cancer_name == cancer) 
   
   plot_dat |> 
-    ggplot(aes(Group, NPX, color = Group, fill = Group)) +
+    ggplot(aes(Group_2, NPX, color = Group_2, fill = Group_2)) +
     geom_boxplot(show.legend = F) +
     #geom_violin(alpha = 0.8) +
     stat_summary(fun = mean, geom = "point", shape = 95, size = 8, color = "white", show.legend = F) +
@@ -1055,3 +1057,76 @@ plot_top_proteins_seed <- function(protein_importance,
   
 }
 
+blend_colors <- 
+  function(x, y, color1, color2) {
+    
+    total <- x + y
+    if (total == 0) return("#808080")  # gray for zero-total cases
+    p1 <- x / total
+    p2 <- y / total
+    rgb1 <- col2rgb(color1) / 255
+    rgb2 <- col2rgb(color2) / 255
+    mixed_rgb <- rgb1 * p1 + rgb2 * p2
+    rgb(mixed_rgb[1], mixed_rgb[2], mixed_rgb[3])
+  }
+
+plot_effect_distribution <- function(variance_explained) {
+  p <- 
+    variance_explained |> 
+    filter(Component != "Residual") |> 
+    pivot_wider(names_from = Component, values_from = Variance) |> 
+    mutate(Color = mapply(
+      blend_colors,
+      `Fixed effects (age & sex)`,
+      `Random effects (subject)`,
+      MoreArgs = list(color1 = "#83A49F", color2 = "#F6C9C5")
+    )) |> 
+    ggplot(aes(`Fixed effects (age & sex)`, `Random effects (subject)`)) +
+    geom_point(aes(color = Color)) +
+    geom_text_repel(aes(label = Protein, color = Color)) +
+    scale_color_identity() +
+    theme_hpa()
+  
+  ggMarginal(p, 
+             type = "density", 
+             margins = "both", 
+             size = 5,
+             xparams = list(color = "#83A49F", fill = "#83A49F", alpha = 0.5),  
+             yparams = list(color = "#F6C9C5", fill = "#F6C9C5", alpha = 0.5)) |> 
+    as.ggplot()
+}
+
+plot_fixed_effect_distribution <- function(fixed_effects) {
+  
+  dat <-
+    fixed_effects |>
+    select(Assay, term, p.value, estimate) |>
+    filter((term != "(Intercept)"))
+  
+  p <- 
+    dat |>
+    select(-p.value) |>
+    mutate(#p.value = -log10(p.value),
+      estimate = abs(estimate),
+      term = ifelse(term == "SexM", "Sex", term)) |>
+    pivot_wider(names_from = term, values_from = estimate) |>
+    mutate(Color = mapply(
+      blend_colors,
+      Age,
+      Sex,
+      MoreArgs = list(color1 = pal_anova["Age"], color2 = pal_anova["Sex"])
+    )) |> 
+    ggplot(aes(Age, Sex)) +
+    geom_point(aes(color = Color)) +
+    geom_text_repel(aes(label = Assay, color = Color)) +
+    scale_color_identity() +
+    theme_hpa()
+  
+  ggMarginal(p, 
+             type = "density", 
+             margins = "both", 
+             size = 5,
+             xparams = list(color = pal_anova["Age"], fill = pal_anova["Age"], alpha = 0.5),  
+             yparams = list(color = pal_anova["Sex"], fill = pal_anova["Sex"], alpha = 0.5)) |> 
+    as.ggplot()
+}
