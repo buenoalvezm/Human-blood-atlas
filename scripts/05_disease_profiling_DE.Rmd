@@ -277,13 +277,12 @@ combined_de <-
 saveRDS(combined_de, savepath_data("DE", "combined_de.rds"))
 write_tsv(combined_de, savepath_data("Supplementary-files", "Data_S6.tsv"))
 
-combined_de <- readRDS(savepath_data("DE", "combined_de.rds"))
+#combined_de <- readRDS(savepath_data("DE", "combined_de.rds"))
 ```
 
-# Review
+# Visualization
 
 ```{r}
-
 combined_de_ext <- 
   combined_de |> 
   mutate(Significance_FC1_pval05 = case_when(logFC > 1 & adj.P.Val < 0.05 ~ "significant up",
@@ -300,56 +299,24 @@ combined_de_ext <-
                                               T ~ "not significant")) |> 
   rename(Significance_original = Significance)
 
-
-
-combined_de_ext |> 
+plot_de <- 
+  combined_de_ext |> 
   select(-logFC, -adj.P.Val) |> 
   pivot_longer(cols = c("Significance_original", "Significance_FC1_pval05", "Significance_FC05_pval005", "Significance_FC1_pval005", "Significance_FC1_pval0005"),
                names_to = "Threshold",
                values_to = "Significance") |> 
   group_by(Control, Disease, Threshold) |> 
   count(Significance) |> 
-  mutate( Disease = factor(Disease, levels = disease_class_order),
+  mutate( Disease = factor(Disease, levels = rev(disease_class_order)),
           Threshold = gsub("Significance_", "", Threshold),
           Threshold = factor(Threshold, levels = c("original", "FC1_pval05", "FC05_pval005", "FC1_pval005", "FC1_pval0005"))) |> 
   filter(Significance != "not significant") |> 
   ggplot(aes(Disease, n, fill = Significance)) +
   geom_col() +
-  geom_text(aes(label = n), position = position_stack(vjust = 0.5), size = 3) +
+  #geom_text(aes(label = n), position = position_stack(vjust = 0.5), size = 3) +
   coord_flip() +
   facet_wrap(Threshold~Control, nrow = 1) +
   scale_fill_manual(values = pal_de) +
-  theme_hpa()
-
-ggsave(savepath("DE_thresholds.pdf"), h = 13, w = 24)
-```
-
-# Visualization
-
-
-## Summary
-
-```{r}
-de_plot <- 
-  combined_de |> 
-  left_join(meta_disease |> 
-              distinct(Disease, Class), by = "Disease") |> 
-  mutate(Disease = factor(Disease, levels = rev(disease_class_order)))
-
-dat <- 
-  de_plot |> 
-  group_by(Control, Disease, Class, Significance) |> 
-  count(Significance) 
-
-plot_de <- 
-  dat |> 
-  mutate(Control = factor(Control, levels = c("Healthy", "All other diseases", "Class"))) |> 
-  ggplot(aes(Disease,n, fill = Significance, color = Significance)) +
-  geom_col(color = "white", size = 0.1) +
-  scale_color_manual(values = pal_de) +
-  scale_fill_manual(values = pal_de) +
-  coord_flip() +
-  facet_wrap(~Control) +
   theme_hpa(angled = T, axis_y = F) +
   ylab("Number of proteins")
 
@@ -367,9 +334,51 @@ plot_disease <-
         axis.line.y = element_blank())
 
 plot_disease + plot_de + 
-  plot_layout(guides = "collect")  # Correct argument name
+  plot_layout(guides = "collect") 
 
-ggsave(savepath_results("Manuscript-figures", "Supplementary_DE.pdf"), h = 12, w = 12)
+ggsave(savepath_results("Manuscript-figures", "DE_thresholds.pdf"), h = 13, w = 19)
+
+# Previous version - only one threshold
+# de_plot <- 
+#   combined_de |> 
+#   left_join(meta_disease |> 
+#               distinct(Disease, Class), by = "Disease") |> 
+#   mutate(Disease = factor(Disease, levels = rev(disease_class_order)))
+# 
+# dat <- 
+#   de_plot |> 
+#   group_by(Control, Disease, Class, Significance) |> 
+#   count(Significance) 
+# 
+# plot_de <- 
+#   dat |> 
+#   mutate(Control = factor(Control, levels = c("Healthy", "All other diseases", "Class"))) |> 
+#   ggplot(aes(Disease,n, fill = Significance, color = Significance)) +
+#   geom_col(color = "white", size = 0.1) +
+#   scale_color_manual(values = pal_de) +
+#   scale_fill_manual(values = pal_de) +
+#   coord_flip() +
+#   facet_wrap(~Control) +
+#   theme_hpa(angled = T, axis_y = F) +
+#   ylab("Number of proteins")
+# 
+# plot_disease <- 
+#   meta_disease |> 
+#   distinct(Disease, Class) |> 
+#   filter(Disease != "Healthy") |> 
+#   mutate(Disease = factor(Disease, levels = rev(disease_class_order))) |> 
+#   ggplot(aes("", Disease, fill = Class)) +
+#   geom_tile() +
+#   coord_fixed() +
+#   scale_fill_manual(values = pal_class) +
+#   theme_hpa(axis_x = F) +
+#   theme(axis.ticks.y = element_blank(),
+#         axis.line.y = element_blank())
+# 
+# plot_disease + plot_de + 
+#   plot_layout(guides = "collect")  # Correct argument name
+# 
+# ggsave(savepath_results("Manuscript-figures", "Supplementary_DE.pdf"), h = 12, w = 12)
 ```
 
 
@@ -490,7 +499,12 @@ res_enrichment <-
       filter(Significance != "not significant",
              Control == control)
     
-    map_df(diseases, function(disease) {
+    current_diseases <- 
+      de_class |> 
+      distinct(Disease) |> 
+      pull()
+    
+    map_df(current_diseases, function(disease) {
       
       message("Performing enrichment analyses. Current disease: ",disease, ", Control: ", control)
       
@@ -524,11 +538,46 @@ res_enrichment <-
   })
 
 
+res_enrichment |> 
+  write_excel_csv2(savepath_results("Enrichment", "Enrichment_all_diseases.csv"),                   col_names = T)
 
 
+top_30_pathways <- 
+  res_enrichment |> 
+  count(Description) |> 
+  arrange(-n)|> 
+  head(30)
+
+res_enrichment |> 
+  count(Disease, Control) |> 
+  arrange(-n)
 
 
+ann <- 
+  res_enrichment |> 
+  distinct(Disease, Control) |> 
+  mutate(rows = paste(Disease, Control, sep = "_")) |> 
+  left_join(meta_disease |> 
+              distinct(Disease, Class), by = "Disease") |> 
+  select(-Disease) |> 
+  column_to_rownames("rows")
+library(viridis)
+res_enrichment |> 
+  filter(Description %in% top_30_pathways$Description) |> 
+  select(Disease, Control, p.adjust, Description) |> 
+  mutate(p.adjust = -log10(p.adjust)) |> 
+  pivot_wider(names_from = c(Disease, Control), values_from = p.adjust) |>
+  column_to_rownames("Description") |> 
+  pheatmap(show_colnames = F,
+           annotation_col = ann,
+           color = viridis(100, option = "magma"),
+           annotation_colors = list(Class = pal_class,
+                                    Control = pal_controls)) |> 
+  as.ggplot()
 
+ggsave(savepath_results("Manuscript-figures", "GO_enrichment.pdf"),
+       height = 6,
+       width = 18)
 
 
 barplot(de_enrichment)
