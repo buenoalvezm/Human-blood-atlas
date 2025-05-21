@@ -19,6 +19,7 @@ source("scripts/functions/themes_palettes.R")
 data_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_data_phase1.tsv")
 meta_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_meta_phase1.tsv")
 
+# Convert to wide data format
 data_disease_wide <- 
   data_disease |> 
   select(-OlinkID, -LOD) |> 
@@ -30,7 +31,6 @@ data_disease_wide <-
 # ANOVA
 
 ```{r}
-# Apply the function to each protein group
 data_anova <- 
   data_disease |> 
   select(DAid, Assay, NPX) %>%
@@ -38,7 +38,9 @@ data_anova <-
               select(DAid, Disease, Age, Sex, BMI), by = "DAid") |> 
   mutate(BMI = ifelse(BMI == 0, NA, BMI))
 
-# Test the function on one protein
+#saveRDS(data_anova, savepath_data("ANOVA", "anova_dat.rds"))
+
+# Run ANOVA for all proteins
 anova_res <- 
   map_df(unique(data_disease$Assay), function(protein) {
     
@@ -47,24 +49,27 @@ anova_res <-
     
   })
 
-saveRDS(anova_res, savepath_data("ANOVA", "anova_wellness.rds"))
-anova_res <- readRDS(savepath_data("ANOVA", "anova_wellness.rds"))
+#saveRDS(anova_res, savepath_data("ANOVA", "anova_diseases.rds"))
 
-write_excel_csv(anova_res, savepath_data("Supplementary-files", "Data_S5.csv"))
+# Adjust p-values
+anova_res_adjusted <- 
+  anova_res |> 
+  mutate(p.adjusted = p.adjust(p.value, method = "BH")) |> 
+  relocate(p.adjusted, .after = p.value) 
 
-anova_res |> 
-  filter(term == "Disease",
-         p.value < 0.05) 
+# Save results
+#write_excel_csv(anova_res_adjusted, savepath_data("Supplementary-files", "Data_S5.csv"))
 ```
 
-
-## Visualize
+## Overall visualization
 
 ```{r}
+# Preapre data
 dat <- 
-  anova_res |> 
+  anova_res_adjusted |> 
   group_by(Protein) |> 
-  filter(term != "Residuals") |> 
+  filter(term != "(Intercept)",
+         term != "Residuals") |> 
   mutate(Total_variance = sum(Eta2_perc)) |> 
   arrange(-Total_variance) 
 
@@ -74,69 +79,22 @@ top_variance <-
   distinct(Protein) |> 
   pull()
 
-#plot_overall <- 
-  dat |> 
+# Plot explained variance across the plasma proteome
+dat |> 
   ggplot(aes(x = reorder(Protein, -Total_variance), y = Eta2_perc, fill = term)) +
   geom_col() +
-  #geom_vline(xintercept = 40, color = "grey", linetype = "dashed", size = 0.5) +
   theme_hpa(angled = T, axis_x_title = T) +
   scale_fill_manual(values = pal_anova) +
   ylab("Variance explained (%)") +
   xlab("Proteins") 
 
+ggsave(savepath_results("Manuscript-figures", "Fig4A.pdf"), h = 4, w = 13)
+```
 
-ggsave(savepath_results("Manuscript-figures", "anova_DA.pdf"), h = 4, w = 13)
+## Selected examples
 
-# Top proteins
-plot_top <- 
-  dat |> 
-  filter(Protein %in% top_variance) |>
-  ggplot(aes(x = reorder(Protein, -Total_variance), y = Eta2_perc, fill = term)) +
-  geom_col(show.legend = F) +
-  theme_hpa(angled = T) +
-  scale_fill_manual(values = pal_anova) +
-  ylab("% of variance explained") +
-  xlab("")+
-  theme(axis.ticks.x = element_blank(),
-        axis.text.x = element_text(size = 8),
-        axis.line.x = element_blank())
-
-plot_overall / plot_top
-
-ggsave(savepath_results("Manuscript-figures", "anova_DA.pdf"), h = 6, w = 12)
-
-
-groups <- 
-  dat |> 
-  group_by(Protein) |> 
-  top_n(1, Eta2_perc) |> 
-  select(Protein, top_term = term)
-
-selected_groups <- 
-  groups |> 
-  filter(top_term != "Disease")
-dat |> 
-  group_by(Protein) |> 
-  top_n(1, Eta2_perc) |> 
-  ungroup() |> 
-  count(term)
-
-dat |>  
-  inner_join(selected_groups) |>  
-  ggplot(aes(x = reorder(Protein, -Total_variance), y = Eta2_perc, fill = term)) +  
-  geom_col() +  
-  geom_vline(xintercept = 40, color = "grey", linetype = "dashed", size = 0.5) +  
-  theme_hpa(angled = T) +  
-  scale_fill_manual(values = pal_anova) +  
-  facet_grid(. ~ top_term, scales = "free", space = "free") +  # Use facet_grid instead of facet_wrap
-  ylab("% of variance explained") +  
-  xlab("")
-
-
-
-
-#Top protein for age, sex, BMI
-
+```{r}
+# Disease: GDF15
 dat_gdf15 <- 
   data_disease |> 
   filter(Assay == "GDF15") |> 
@@ -162,6 +120,7 @@ p1 <-
   ggtitle("GDF15")  +
   xlab("Disease class")
 
+# Sex: CGA
 p2 <- 
   data_disease |> 
   filter(Assay == "CGA") |> 
@@ -180,6 +139,7 @@ p2 <-
   theme_hpa() +
   ggtitle("CGA") 
 
+# Age: EDA2R
 p3 <- 
   data_disease |> 
   filter(Assay == "EDA2R") |> 
@@ -192,7 +152,8 @@ p3 <-
   scale_color_manual(values = pal_class) +
   theme_hpa() +
   ggtitle("EDA2R")
-  
+
+# BMI: LEP  
 p4 <- 
   data_disease |> 
   filter(Assay == "LEP") |> 
@@ -207,33 +168,10 @@ p4 <-
   theme_hpa() +
   ggtitle("LEP")
 
+# Combine plots
 p3 | p4 | p1 | p2
 
 ggsave(savepath_results("Manuscript-figures", "age_sex_bmi_prots.pdf"), h = 3, w = 12)
-
-
-dat |>  
-  group_by(term) |>  
-  top_n(15, Eta2_perc) |>  
-  filter(term != "Disease") |>  
-  mutate(term = factor(term, levels = c("Sex", "Age", "BMI")),
-         Protein = reorder_within(Protein, Eta2_perc, term)) |>  # Reorder within each term
-  ggplot(aes(Protein, Eta2_perc, color = term)) +  # Change fill to color for lines
-  geom_segment(aes(xend = Protein, yend = 0), size = 1) +  # Lollipop stem
-  geom_point(size = 3, aes(fill = term), shape = 21) +  # Lollipop head
-  facet_wrap(~term, scales = "free", ncol = 1) +  
-  scale_color_manual(values = pal_anova) +  # Color for the stems
-  scale_fill_manual(values = pal_anova) +  # Fill for the points
-  scale_x_reordered() +  # Apply reordering to x-axis
-  xlab("") +  
-  theme_hpa(angled = T) +  
-  coord_flip() +
-  theme(panel.spacing = unit(1.5, "lines"))
-
-ggsave(savepath("age_sex_bmi_top_prots_lollipop.pdf"), w = 3.5, h = 11)
-
-
-
 ```
 
 # Machine learning
