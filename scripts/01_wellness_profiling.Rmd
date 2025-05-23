@@ -415,6 +415,7 @@ Identify proteins that are significantly differentially expressed between visits
 
 Reinforce stability of the proteome by showing that very few proteins change over time. Highlight how few proteins vary across visits.
 
+
 ```{r}
 # Prepare data for mixed effect modelling
 data_mixed_model <- 
@@ -423,6 +424,8 @@ data_mixed_model <-
   left_join(meta_wellness |> 
               mutate(Visit = as.numeric(Visit)) |> 
               select(DAid, Subject, Age, Sex), by = "DAid")
+
+#saveRDS(data_mixed_model, savepath_data("MM_test", "data_mm_Wellness.rds"))
 
 # Run mixed effect models on all proteins extracting the fixed effects
 fixed_effects <- 
@@ -444,16 +447,81 @@ variance_explained <-
     
   })
 
-saveRDS(fixed_effects, "data/processed/MM_estimates_Wellness.rds")
-saveRDS(variance_explained, "data/processed/MM_variance_Wellness.rds")
+saveRDS(fixed_effects, savepath_data("MM", "MM_estimates_Wellness.rds"))
+saveRDS(variance_explained, savepath_data("MM", "MM_variance_Wellness.rds"))
 
+# Adjust p-values
+
+# Save results
 write_excel_csv(fixed_effects, savepath_data("Supplementary-files", "Data_S2_Wellness_estimates.csv"))
 write_excel_csv(variance_explained, savepath_data("Supplementary-files", "Data_S2_Wellness_variance.csv"))
 ```
+## Summary
 
-## Visualize 
+```{r}
+variance_explained |> 
+  filter(Component != "Residual") |> 
+ mutate(Variance = Variance * 100,
+         Component = factor(Component, levels = c("Random effects (subject)", "Fixed effects (age & sex)"))) |> 
+  ggplot(aes(Variance, fill = Component)) +
+  geom_histogram(show.legend = F) +
+  facet_wrap(~Component, scales = "free") +
+  scale_fill_manual(values = pal_mm) +
+  xlab("Variance explained (%)") +
+  ylab("Number of proteins") +
+  theme_hpa()
 
-### Overall
+ggsave(savepath_results("Manuscript-figures", "MM_variance_explained_Wellness.pdf"), h = 3, w = 7)
+
+# plot_effect_distribution(variance_explained) + plot_fixed_effect_distribution(fixed_effects)
+# ggsave(savepath_results("Manuscript-figures", "MM_summary_Wellness.pdf"), h = 4, w = 8)
+
+# top_age <- 
+#   fixed_effects |> 
+#   filter(term == "Age") |> 
+#   arrange(-abs(estimate)) |> 
+#   head(1) |> pull(Assay)
+# 
+# top_sex <- 
+#   fixed_effects |> 
+#   filter(term == "SexM") |> 
+#   arrange(-abs(estimate)) |> 
+#   head(1) |> pull(Assay)
+# 
+# p_age <- 
+#   data_wellness |> 
+#   filter(Assay == top_age) |> 
+#   left_join(meta_wellness, by = "DAid") |> 
+#   mutate(Visit = factor(Visit)) |> 
+#   ggplot(aes(Age, NPX, color = Age)) +
+#   geom_point() +
+#   geom_smooth(color = "grey20") +
+#   scale_color_viridis_c(begin = 1, end = 0) +
+#   #scale_color_manual(values = pal_sex) +
+#   facet_wrap(~Assay, nrow = 1, scale = "free") +
+#   theme_hpa() +
+#   theme(legend.position = "top") 
+# 
+# p_sex <- 
+#   data_wellness |> 
+#   filter(Assay == top_sex) |> 
+#   left_join(meta_wellness, by = "DAid") |> 
+#   mutate(Visit = factor(Visit)) |> 
+#   ggplot(aes(Sex, NPX, color = Sex, fill = Sex)) +
+#   geom_quasirandom() +
+#   geom_boxplot(color = "grey20", outlier.color = NA, alpha = 0.6) +
+#   scale_color_manual(values = pal_sex) +
+#   scale_fill_manual(values = pal_sex) +
+#   facet_wrap(~Assay, nrow = 1, scale = "free") +
+#   theme_hpa() +
+#   theme(legend.position = "top")
+# 
+# 
+# p_sex / p_age 
+# ggsave(savepath_results("Manuscript-figures", "MM_summary_Wellness_examples.pdf"), h = 7, w = 3.5)
+```
+
+## Complete visualization
 
 ```{r}
 order <- 
@@ -489,9 +557,19 @@ variance_explained |>
 ggsave(savepath_results("Manuscript-figures", "MM-variance-explained.pdf"), h = 4, w = 14)
 ```
 
-### Examples main
+## Examples main
 
 ```{r}
+variance_explained |> 
+  filter(Component == "Fixed effects (age & sex)") |> 
+  arrange(-Variance) |> 
+  head(1)
+
+variance_explained |> 
+  filter(Component == "Random effects (subject)") |> 
+  arrange(-Variance) |> 
+  head(1)
+
 # Example individual
 data_wellness |> 
   filter(Assay %in% c("PNLIPRP2", "SPINT3")) |> 
@@ -509,7 +587,7 @@ ggsave(savepath_results("Manuscript-figures", "MM-example-individual.pdf"), h = 
 ```
 
 
-### Examples supplementary
+## Examples supplementary
 
 ```{r}
 top_100 <- 
@@ -604,134 +682,3 @@ p1 / p2 / p3 / p4
 ggsave(savepath_results("Manuscript-figures", "MM-variance-explained.pdf"), h = 12, w = 14)
 ```
 
-
-### Example age
-
-```{r}
-dat_age <- 
-  mm_all_proteins |> 
-  filter(term == "age") |> 
-  arrange(p.value) |> 
-  mutate(sig = case_when(p.value< 0.06 & estimate > 0 ~ "significant up",
-                         p.value< 0.06 & estimate < 0 ~ "significant down",
-                         TRUE ~ "not significant"))
-labels_age <- 
-  dat_age |> 
-  top_n(n = 10, wt = -log10(p.value)) 
-
-volcano_plot_age <- 
-  dat_age |> 
-  ggplot(aes(x = estimate, y = -log10(p.value), color = sig, label = Protein)) +
-  geom_point(size = 1, alpha = 0.4, show.legend = F) + 
-  geom_text_repel(data = labels_age, size = 2, show.legend = F) +
-  geom_hline(yintercept = -log10(0.05), linetype = 'dashed', color = "darkgrey") +
-  #geom_vline(xintercept = -1, linetype = 'dashed', color = "darkgrey") +
- # geom_vline(xintercept = 1, linetype = 'dashed', color = "darkgrey") +
-  scale_color_manual(values = pal_de) +
-  theme_hpa() +   
-  theme(axis.text = element_text(size = 8),
-        legend.position = "top") 
-```
-
-### Sex
-
-```{r}
-dat_sex <- 
-  mm_all_proteins |> 
-  filter(term == "sexM") |> 
-  arrange(p.value) |> 
-  mutate(sig = case_when(p.value< 0.06 & estimate > 0 ~ "significant up",
-                         p.value< 0.06 & estimate < 0 ~ "significant down",
-                         TRUE ~ "not significant"))
-labels_sex <- 
-  dat_sex |> 
-  top_n(n = 10, wt = -log10(p.value)) 
-
-volcano_plot_sex <- 
-  dat_sex |> 
-  ggplot(aes(x = estimate, y = -log10(p.value), color = sig, label = Protein)) +
-  geom_point(size = 1, alpha = 0.4, show.legend = F) + 
-  geom_text_repel(data = labels_sex, size = 2, show.legend = F) +
-  geom_hline(yintercept = -log10(0.05), linetype = 'dashed', color = "darkgrey") +
-  #geom_vline(xintercept = -1, linetype = 'dashed', color = "darkgrey") +
- # geom_vline(xintercept = 1, linetype = 'dashed', color = "darkgrey") +
-  scale_color_manual(values = pal_de) +
-  theme_hpa() +   
-  theme(axis.text = element_text(size = 8),
-        legend.position = "top") 
-
-volcano_plot_sex + volcano_plot_age
-ggsave(savepath("volcanos_wellness_MM.pdf"), h = 4, w = 10)
-
-volcano_plot_age
-ggsave(savepath("volcano_age_MM_wellness.pdf"), h = 4, w = 5)
-```
-
-### Proteins age
-
-```{r}
-top_age_proteins <- 
-  dat_age |> 
-  group_by(sig) |>
-  top_n(n = 4, wt = -log10(p.value)) |> 
-  filter(sig != "not significant") 
-
-wellness_data |> 
-  filter(Assay %in% top_age_proteins$Protein) |>
-  left_join(wellness_meta |> 
-              select(DAid, subject, age, visit)) |> 
-  mutate(Assay = factor(Assay, levels = top_age_proteins$Protein)) |>
-  ggplot(aes(age, NPX, color = age)) +
-  geom_line(aes(group = subject), alpha = 0.3, color = "grey80") +
-  geom_point() +
-  geom_smooth(method = "lm", se = F, color = "white") +
-  #geom_quasirandom(alpha = 0.7, show.legend = F) +
- # geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
- # scale_color_manual(values = pal_bamse) +
-  scale_color_viridis_c(option = "magma") +
-  facet_wrap(~Assay, scales = "free_y", nrow = 1) +
-  theme_hpa() 
-  
-ggsave(savepath("top_age_proteins_bamse.pdf"), h = 2.5, w = 12)
-
-wellness_data |> 
-  filter(Assay %in% top_age_proteins$Protein) |>
-  left_join(wellness_meta |> 
-              select(DAid, subject, age, visit)) |> 
-  mutate(Assay = factor(Assay, levels = top_age_proteins$Protein)) |>
-  ggplot(aes(visit, NPX, color = visit)) +
-  geom_line(aes(group = subject), alpha = 0.3, color = "grey80") +
-  geom_point() +
-  #geom_smooth(method = "lm", se = F, color = "white") +
-  geom_quasirandom(alpha = 0.7, show.legend = F) +
-  geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
- # scale_color_manual(values = pal_bamse) +
-  scale_color_viridis_d(option = "magma") +
-  facet_wrap(~Assay, scales = "free_y", nrow = 2) +
-  theme_hpa(axis_x = F) 
-  
-ggsave(savepath("top_age_proteins_wellness_d.pdf"), h = 2.5, w = 12)
-ggsave(savepath("top_age_proteins_wellness_d.pdf"), h = 3.5, w = 8)
-
-
-top_sex_proteins <- 
-  dat_sex |> 
-  group_by(sig) |>
-  top_n(n = 4, wt = -log10(p.value)) |> 
-  filter(sig != "not significant") 
-
-bamse_data |> 
-  filter(Assay %in% top_sex_proteins$Protein) |>
-  left_join(bamse_meta |> 
-              select(DAid, subject, Sex)) |> 
-  mutate(Assay = factor(Assay, levels = top_sex_proteins$Protein)) |>
-  ggplot(aes(Sex, NPX, color = Sex)) +
-  geom_line(aes(group = subject), alpha = 0.3, color = "grey80") +
-  geom_quasirandom(alpha = 0.7, show.legend = F) +
-  geom_boxplot(fill = NA, outlier.colour = NA, color = "grey20") +
-  #scale_color_manual(values = pal_bamse) +
-  facet_wrap(~Assay, scales = "free_y", nrow = 1) +
-  theme_hpa(axis_x = F) 
-
-ggsave(savepath("top_sex_proteins_wellness.pdf"), h = 2.5, w = 12)
-```
