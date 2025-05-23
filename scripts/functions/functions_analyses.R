@@ -10,13 +10,6 @@ library(tidymodels)
 library(themis)
 library(clusterProfiler)
 #library(car)
-#install.packages("car")
-
-
-
-
-
-
 
 do_mixed_effect_model <- function(df, protein, type) {
   
@@ -621,91 +614,61 @@ continuous_prediction <-
                 "important_proteins" = important_proteins))
   }
 
-# Function to perform over-representation analysis
-do_ora_clusterprofiler <- function(protein_list,
-                   database = c("KEGG", "GO", "Reactome"),
-                   background = NULL,
-                   pval_lim = 0.05) {
-  database <- match.arg(database)
+biological_themes <- list(
+  Adaptive_Immunity = c("adaptive", "T cell", "B cell", "antigen", "MHC", "lymphocyte", "immunoglobulin"),
+  Innate_Immunity = c("innate", "macrophage", "neutrophil", "complement", "inflammatory", "pattern recognition", "TLR"),
+  Cytokine_Signaling = c("cytokine", "interleukin", "interferon", "chemokine", "TNF"),
+  Cell_Cycle = c("cell cycle", "mitosis", "proliferation", "DNA replication"),
+  Apoptosis_Stress = c("apoptosis", "oxidative", "hypoxia", "stress", "cell death"),
+  Lipid_Metabolism = c("lipid", "fatty acid", "cholesterol", "triglyceride"),
+  Glucose_Insulin = c("glucose", "insulin", "glycolysis", "gluconeogenesis"),
+  ECM_Adhesion = c("extracellular matrix", "collagen", "adhesion", "integrin", "fibrosis"),
+  Angiogenesis = c("angiogenesis", "vascular", "blood vessel", "endothelial", "VEGF"),
+  Hemostasis = c("coagulation", "platelet", "fibrin", "thrombosis"),
+  Neuro = c("neuron", "neurotransmitter", "synapse", "axon"),
+  Wound_Healing = c("wound", "repair", "regeneration"),
+  Development = c("development", "morphogenesis", "embryo", "differentiation"),
+  Metabolism_General = c("metabolic", "metabolism"),
   
-  if (is.null(background)) {
-    message("No background provided. When working with Olink data it is recommended to use background.")
+  # Additional themes
+  DNA_Repair = c("DNA repair", "genome integrity", "mismatch repair", "nucleotide excision", "double strand break"),
+  Signal_Transduction = c("kinase", "phosphorylation", "MAPK", "PI3K", "signaling pathway"),
+  Immune_Checkpoints = c("PD-1", "CTLA-4", "immune checkpoint", "regulatory T cell"),
+  Autophagy = c("autophagy", "lysosome", "degradation"),
+  Mitochondrial_Function = c("mitochondria", "oxidative phosphorylation", "respiratory chain"),
+  Protein_Folding = c("chaperone", "folding", "heat shock protein", "proteostasis"),
+  Epigenetic_Regulation = c("methylation", "histone", "chromatin", "epigenetic"),
+  Extracellular_Vesicles = c("exosome", "extracellular vesicle", "microvesicle"),
+  Fibrosis_Remodeling = c("fibrosis", "scar", "remodeling", "TGF-beta"),
+  Hormone_Signaling = c("hormone", "estrogen", "androgen", "glucocorticoid")
+)
+
+df_shared_themes <- data.frame(
+  Theme = c(
+    "Adaptive_Immunity", "Innate_Immunity", "Cytokine_Signaling", "Immune_Checkpoints",
+    "Cell_Cycle", "Apoptosis_Stress", "DNA_Repair", "Signal_Transduction",
+    "Autophagy", "Protein_Folding", "Epigenetic_Regulation",
+    "Lipid_Metabolism", "Glucose_Insulin", "Metabolism_General", "Mitochondrial_Function",
+    "ECM_Adhesion", "Fibrosis_Remodeling", "Extracellular_Vesicles",
+    "Angiogenesis", "Hemostasis", "Neuro", "Wound_Healing", "Development", "Hormone_Signaling"
+  ),
+  Shared_Broad_Category = c(
+    "Immunity", "Immunity", "Immunity", "Immunity",
+    "Cell Regulation", "Cell Regulation", "Cell Regulation", "Cell Regulation",
+    "Cell Regulation", "Cell Regulation", "Cell Regulation",
+    "Metabolism", "Metabolism", "Metabolism", "Metabolism",
+    "Structural / ECM", "Structural / ECM", "Structural / ECM",
+    "Vascular", "Vascular", "Nervous System", "Repair / Regeneration", "Developmental Biology", "Endocrine System"
+  ),
+  stringsAsFactors = FALSE
+)
+
+assign_theme <- function(description) {
+  for (theme in names(biological_themes)) {
+    keywords <- biological_themes[[theme]]
+    if (any(str_detect(tolower(description), keywords))) {
+      return(theme)
+    }
   }
-  
-  # From gene name to ENTREZID
-  protein_conversion <- clusterProfiler::bitr(protein_list,
-                                              fromType = "SYMBOL",
-                                              toType = "ENTREZID",
-                                              OrgDb = org.Hs.eg.db::org.Hs.eg.db)
-  
-  protein_list <- protein_conversion |> dplyr::pull(ENTREZID) |> unique()
-  
-  if (!is.null(background)) {
-    background <- clusterProfiler::bitr(background,
-                                        fromType = "SYMBOL",
-                                        toType = "ENTREZID",
-                                        OrgDb = org.Hs.eg.db::org.Hs.eg.db)
-    
-    background <- background |> dplyr::pull(ENTREZID) |> unique()
-  }
-  
-  if (database == "KEGG") {
-    # Perform KEGG enrichment analysis
-    enrichment <- clusterProfiler::enrichKEGG(gene = protein_list,
-                                              organism = "hsa",
-                                              pvalueCutoff = pval_lim,
-                                              universe = background)
-  } else if (database == "GO") {
-    # Perform GO enrichment analysis
-    enrichment <- clusterProfiler::enrichGO(gene = protein_list,
-                                            OrgDb = org.Hs.eg.db::org.Hs.eg.db,
-                                            ont = "BP",
-                                            pvalueCutoff = pval_lim,
-                                            universe = background)
-  } else if (database == "Reactome") {
-    # Perform Reactome enrichment analysis
-    enrichment <- ReactomePA::enrichPathway(gene = protein_list,
-                                            organism = "human",
-                                            pvalueCutoff = pval_lim,
-                                            universe = background)
-  }
-  
-  if (!any(enrichment@result$p.adjust < pval_lim)) {
-    message("No significant terms found.")
-    return(NULL)
-  }
-  
-  return(enrichment)
+  return("Other")
 }
-
-# Function to perform over-representation analysis
-do_ora <-
-  
-  function(gene_associations, #gene, partitition
-           database, #term, gene
-           universe,
-           n_clusters = 5,
-           minGSSize = 10,
-           maxGSSize = Inf,
-           pvalueCutoff = 0.05,
-           qvalueCutoff = 0.2) {
-    
-    outdata <-
-      gene_associations |> 
-      group_by(partition) |> 
-      do({
-        g_data <- .
-        pull(g_data, gene) |> 
-          enricher(universe = universe,
-                   TERM2GENE = database, 
-                   minGSSize = minGSSize,
-                   maxGSSize = maxGSSize,
-                   pvalueCutoff = pvalueCutoff,
-                   qvalueCutoff = qvalueCutoff) |> 
-          as_tibble()
-      })  |> 
-      ungroup()  |> 
-      collect()
-    
-  }
-
