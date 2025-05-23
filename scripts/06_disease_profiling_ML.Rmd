@@ -101,6 +101,8 @@ roc_healthy <- read_tsv("server-scripts/parsed-results/roc_disease_healthy.tsv")
 
 # Combine
 
+## Rescale
+
 ```{r}
 scaled_healthy <- 
   importances_healthy |> 
@@ -140,7 +142,7 @@ scaled_all <-
   filter(Assay != "SCALING")
 ```
 
-# Save for HPA
+## Save for HPA
 
 ```{r}
 final_importance_data  <- 
@@ -161,6 +163,7 @@ final_importance_data  <-
 
 # Protein importances
 
+## Across disesaes and comparisons
 ```{r}
 plots_features <- 
   map(include_diseases, function(disease) {
@@ -201,10 +204,6 @@ dat |>
 ## Protein importance for example diseases
 
 ```{r}
-importances_all  |> 
-  distinct(class) |> 
-  filter(!class %in% include_diseases)
-
 example_diseases <- c("Acute myeloid leukemia",
                       "Influenza",
                       "Acute coronary syndrome",
@@ -213,7 +212,6 @@ example_diseases <- c("Acute myeloid leukemia",
                       "Schizophrenia")
 
 importances_all |> 
-  mutate(class = ifelse(class == "Scleroderma", "Systemic sclerosis", class)) |> 
   group_by(class, term) |> 
   summarise(avg_estimate = mean(estimate)) |> 
   group_by(class) |> 
@@ -223,8 +221,6 @@ importances_all |>
   left_join(meta_disease |> 
               distinct(Disease, Class), by = c("class" = "Disease")) |> 
   filter(class %in% example_diseases) |> 
-  #filter(class != "Healthy") |> 
- # mutate(class = factor(class, levels = disease_class_order[disease_class_order %in% include_diseases])) |> 
   ggplot(aes(fct_reorder(Names, -avg_estimate), avg_estimate, color = Class)) + 
   geom_point(show.legend = F) + 
   geom_segment(aes(x = Names, xend = Names, y = 0, yend = avg_estimate), show.legend = F) + 
@@ -235,7 +231,7 @@ importances_all |>
   xlab("") + 
   theme_hpa(axis_x = F)
 
-ggsave(savepath("features-multiclass.pdf"), h = 3, w = 12)
+#ggsave(savepath("features-multiclass.pdf"), h = 3, w = 12)
 ```
 
 
@@ -275,37 +271,7 @@ final_importance_data |>
   theme_hpa(angled = T)
 ```
 
-## Example diseases
 
-```{r}
-example_diseases <- c("Rheumatoid arthritis",
-                      "Acute venous thromboembolism",
-                      "Schizophrenia",
-                      "MASLD", 
-                      "Malaria")
-
-imp_plots <- 
-  map(example_diseases, \(disease) {
-    
-    imp <- 
-      multiclass_importance |> 
-      filter(class == disease)
-    
-    current_class <- 
-      resource_meta |> 
-      filter(Disease == disease) |> 
-      pull(Class) |> 
-      unique()
-    
-    plot_top_proteins_seed(imp, 
-                           plot_color = pal_class[[current_class]],
-                           n = 10) +
-      ggtitle(disease) 
-  })
-
-imp_plots[[1]] / imp_plots[[2]] / imp_plots[[3]] / imp_plots[[4]] / imp_plots[[5]] 
-ggsave(savepath("features_selected_diseases.pdf"), h = 16, w = 4)
-```
 
 # Performance
 
