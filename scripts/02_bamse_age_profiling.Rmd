@@ -135,14 +135,9 @@ proteins_below_LOD_80 <-
   filter(above_LOD == "No", 
          n >80)
 
-
 data_bamse_detected <- 
   data_bamse |>
   filter(!Assay %in% proteins_below_LOD_80$Assay)
-
-data_bamse_detected |> 
-  distinct(Assay) |> 
-  nrow()
 ```
 
 
@@ -191,8 +186,10 @@ data_mm <-
          Age = as.factor(Age),
          Subject = as.factor(Subject))
 
+#saveRDS(data_mm, savepath_data("MM_test", "data_mm_BAMSE.rds"))
+
 # Run mixed effect models on all proteins extracting the fixed effects
-mixed_model_all_proteins <- 
+fixed_effects <- 
   map_df(unique(data_mm$Assay), function(protein) {
     
     do_mixed_effect_model(df = data_mm, 
@@ -211,44 +208,46 @@ variance_explained <-
   })
 
     
-saveRDS(mixed_model_all_proteins, "data/processed/MM_estimates_BAMSE.rds")
-saveRDS(variance_explained, "data/processed/MM_variance_BAMSE.rds")
+saveRDS(fixed_effects, savepath_data("MM", "MM_estimates_BAMSE.rds"))
+saveRDS(variance_explained, savepath_data("MM", "MM_variance_BAMSE.rds"))
 
-write_excel_csv(mixed_model_all_proteins, savepath_data("Supplementary-files", "Data_S3_BAMSE_estimates.csv"))
+# Adjust p-values
+
+# Save results
+write_excel_csv(fixed_effects, savepath_data("Supplementary-files", "Data_S3_BAMSE_estimates.csv"))
 write_excel_csv(variance_explained, savepath_data("Supplementary-files", "Data_S3_BAMSE_variance.csv"))
 ```
 
 ## Summary
 
 ```{r}
+variance_explained |> 
+  filter(Component != "Residual") |> 
+  mutate(Variance = Variance * 100,
+         Component = factor(Component, levels = c("Random effects (subject)", "Fixed effects (age & sex)"))) |> 
+  ggplot(aes(Variance, fill = Component)) +
+  geom_histogram(show.legend = F) +
+  facet_wrap(~Component, scales = "free") +
+  scale_fill_manual(values = pal_mm) +
+  xlab("Variance explained (%)") +
+  ylab("Number of proteins") +
+  theme_hpa()
+
+ggsave(savepath_results("Manuscript-figures", "MM_variance_explained_BAMSE.pdf"), h = 3, w = 7)
+
+# plot_effect_distribution(variance_explained) 
+# ggsave(savepath_results("Manuscript-figures", "MM_summary_BAMSE.pdf"), h = 4, w = 4)
+```
+
+## Complete visualization
+
+```{r}
 order <-  
   variance_explained |> 
   filter(Component == "Residual") |> 
   arrange(Variance)
-
-# top_proteins <- 
-#   variance_explained |> 
-#   filter(Component == "Random effects (subject)") |> 
-#   arrange(-Variance) |> 
-#   head(5) |> 
-#   bind_rows(variance_explained |> 
-#   filter(Component == "Fixed effects (age & sex)") |> 
-#   arrange(-Variance) |> 
-#   head(5))
-
-weids <- 
-  variance_explained |> 
-  group_by(Protein) |> 
-  summarise(a = sum(Variance)) |> 
-  filter(is.na(a))
-
-variance_explained |> 
-  filter(Protein %in% weids$Protein) 
-  
   
 variance_explained |> 
-  #filter(Component == "Random effects (subject)") |>
- # filter(Component == "Fixed effects (age & sex)") |>
   filter(Component != "Residual") |> 
   mutate(Protein = factor(Protein,levels = order$Protein)) |> 
   mutate(Variance = Variance * 100) |> 
@@ -268,8 +267,8 @@ ggsave(savepath_results("Manuscript-figures", "Fig2_MM-variance-explained.pdf"),
 
 ```{r}
 variance_explained |> 
-  filter(Component == "Fixed effects (age & sex)") |> 
- # filter(Component == "Random effects (subject)") |> 
+ # filter(Component == "Fixed effects (age & sex)") |> 
+  filter(Component == "Random effects (subject)") |> 
   arrange(-Variance)
 
 data_bamse |> 
@@ -286,6 +285,62 @@ data_bamse |>
   theme(legend.position = "top")
 
 ggsave(savepath_results("Manuscript-figures", "BAMSE-MM-example-individual.pdf"), h = 3.5, w = 6)
+```
+
+## Examples supplementary
+
+```{r}
+top_100 <- 
+  order |> 
+  mutate(Variance = Variance * 100) |> 
+  head(100)
+
+p1 <- 
+  variance_explained |> 
+  filter(Protein %in% top_100$Protein) |>
+  mutate(Protein = factor(Protein, levels = top_100$Protein)) |> 
+  filter(Component != "Residual") |> 
+  mutate(Variance = Variance * 100) |> 
+  ggplot(aes(Protein, Variance, fill = Component)) +
+  geom_col(position = "stack") +
+  scale_fill_manual(values = pal_mm) +
+  theme_hpa(angled = T) +
+  # theme(legend.position = "top",
+  #       axis.ticks.x = element_blank(),
+  #       axis.text.x = element_blank()) +
+  ylab("Variance explained (%)") 
+
+top_proteins <- 
+  variance_explained |> 
+  filter(Component == "Random effects (subject)") |> 
+  arrange(-Variance) |> 
+  head(5) |> 
+  bind_rows(variance_explained |> 
+              filter(Component == "Fixed effects (age & sex)") |> 
+              arrange(-Variance) |> 
+              head(5)) |> 
+  mutate(Variance = Variance * 100) 
+
+proteins_random <- 
+  top_proteins |> 
+  filter(Component == "Random effects (subject)") 
+
+p2 <- 
+  data_bamse |> 
+  filter(Assay %in% proteins_random$Protein) |> 
+  mutate(Assay = factor(Assay, levels = proteins_random$Protein)) |>
+  left_join(meta_bamse, by = "DAid") |> 
+  mutate(Subject = factor(Subject)) |> 
+  ggplot(aes(Visit, NPX, color = Subject)) +
+  geom_point(show.legend = F) +
+  geom_line(show.legend = F) +
+  scale_color_manual(values = colorRampPalette(brewer.pal(12, "Paired"))(100)) +
+  facet_wrap(~Assay, nrow = 1, scale = "free") +
+  theme_hpa()
+
+p1 / p2 
+ggsave(savepath_results("Manuscript-figures", "MM-bamse-supl.pdf"), h = 6.6, w = 15)
+
 ```
 
 
@@ -418,5 +473,67 @@ boxplots_sex <-
 volcano_plot_sex + boxplots_sex
 
 ggsave(savepath_results("Manuscript-figures", "Fig2e_Fig2f.pdf"), h = 5, w = 12)
+```
+
+# Check effect
+
+
+```{r}
+# Read in data
+data_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_data_phase1.tsv")
+meta_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_meta_phase1.tsv")
+
+mixed_model_all_proteins <- readRDS("data/processed/MM_estimates_BAMSE.rds")
+variance_explained <- readRDS("data/processed/MM_variance_BAMSE.rds")
+
+age_proteins <- 
+  mixed_model_all_proteins |> 
+  filter(term == "Age") |> 
+  mutate(p.value = p.adjust(p.value, method = "BH")) |> 
+  arrange(p.value) |> 
+  mutate(sig = case_when(p.value< 0.06 & estimate > 0 ~ "significant up",
+                         p.value< 0.06 & estimate < 0 ~ "significant down",
+                         TRUE ~ "not significant")) 
+
+age_proteins_overlap <- 
+  age_proteins |> 
+  filter(Assay %in% unique(data_disease$Assay))
+
+top_20_dereg <- 
+  age_proteins_overlap |> 
+  filter(sig == "significant up") |> head(8) |> 
+  bind_rows(age_proteins_overlap |> 
+              filter(sig == "significant down") |> head(8))
+
+data_disease |> 
+  filter(Assay %in% top_20_dereg$Assay) |>
+  mutate(Assay = factor(Assay, levels = top_20_dereg$Assay)) |> 
+  left_join(meta_disease |> 
+              select(DAid, Age, Class), by = "DAid") |> 
+  ggplot(aes(Age, NPX, color = Class)) +
+  geom_point() +
+  geom_smooth(color = "black") +
+  facet_wrap(~Assay, ncol = 4, scales  = "free_y") +
+  scale_color_manual(values = pal_class) +
+  theme_hpa() 
+
+ggsave(savepath("top_8_up_down_all_diseases.png"), h = 8, w = 10)    
+
+
+
+data_disease |> 
+  filter(Assay %in% top_20_dereg$Assay) |>
+  mutate(Assay = factor(Assay, levels = top_20_dereg$Assay)) |> 
+  left_join(meta_disease |> 
+              select(DAid, Age, Class), by = "DAid") |> 
+  filter(Class == "Pediatric") |> 
+  ggplot(aes(Age, NPX, color = Class)) +
+  geom_point() +
+  geom_smooth(color = "black") +
+  facet_wrap(~Assay, ncol = 4, scales = "free_y") +
+  scale_color_manual(values = pal_class) +
+  theme_hpa() 
+
+ggsave(savepath("top_8_up_down_pediatric_diseases.png"), h = 8, w = 10)    
 ```
 
