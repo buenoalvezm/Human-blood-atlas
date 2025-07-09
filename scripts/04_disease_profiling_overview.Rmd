@@ -27,7 +27,7 @@ disease_class_order <-
   meta_disease |> 
   distinct(Class, Disease) |> 
   mutate(Class = factor(Class, levels = class_order)) |> 
-  arrange(Class) |> 
+  arrange(Class, Disease) |> 
   pull(Disease)
 
 diseases <- 
@@ -47,6 +47,24 @@ classes <-
 
 
 # Disease overview
+
+## Barplot
+
+```{r}
+meta_disease |> 
+  count(Disease, Class) |> 
+  mutate(Disease = factor(Disease, levels = rev(disease_class_order))) |> 
+  ggplot(aes(Disease, n, fill = Class)) +
+  geom_col(show.legend = F) +
+  coord_flip() + 
+  scale_fill_manual(values = pal_class) +
+  theme_hpa() +
+  xlab("") +
+  ylab("Number of samples")
+
+ggsave(savepath_results("Manuscript-figures", "Fig_cohort_overview.pdf"), h = 9, w = 8)
+
+```
 
 ## Semicircle number of samples
 

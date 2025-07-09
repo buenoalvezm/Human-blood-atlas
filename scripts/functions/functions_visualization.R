@@ -9,12 +9,10 @@ library(ggsci)
 library(eulerr)
 library(ggplotify)
 library(pheatmap)
-library(plotly)
 library(ggridges)
 library(ggraph)
 library(tidygraph)
-library(ggrain)
-library(ggExtra)
+library(ggupset)
 
 do_pca <- function(data,
                    meta = NULL,
@@ -1008,31 +1006,69 @@ boxplot_ukb <- function(cancer, protein) {
   
 }
 
-
-plot_importance_frequency <- function(importances, type) {
+plot_importance_frequency <- function(importances, type, color = "NULL") {
   
   dat_imp_freq <- 
     importances |> 
+    filter(Importance != 0) |> 
     group_by(Variable) |> 
     summarise(avg_importance = mean(abs(Importance))) |> 
     arrange(-avg_importance)  |> 
     left_join(importances |>
                 filter(Importance > 0) |> 
                 count(Variable), by = "Variable") |> 
-    mutate(Type = type) 
+    mutate(Type = type)
   
   
-  dat_imp_freq |> 
-    ggplot(aes(avg_importance, n)) +
-    geom_point(color = pal_anova[type]) +
-    geom_text_repel(data = filter(dat_imp_freq, avg_importance > 0.5),
-                    aes(label = Variable), size = 3) +
-    theme_hpa() +
-    ggtitle(type)
+  if(color == "coefficient_proportion") {
+    
+    dat_imp_freq <- 
+      dat_imp_freq |> 
+      left_join(importances |>
+                  mutate(Sign = ifelse(Importance == 0, "NOT IMPORTANT", Sign)) |>
+                  filter(Sign %in% c("POS", "NEG")) |>  # keep only informative signs
+                  distinct(Variable, Sign, Seed) |> 
+                  group_by(Variable, Sign) |>           # get unique (Variable, Sign) pairs
+                  count(Sign) |>                    # count number of distinct signs per Variable
+                  ungroup() |> 
+                  group_by(Variable) |> 
+                  mutate(total_n = sum(n),
+                         prop = (n / total_n) * 100,
+                         max_prop = max(prop)) |> 
+                  distinct(Variable, max_prop), by = "Variable")
+    
+    
+    plot <- 
+      dat_imp_freq |> 
+      mutate(Proportion_diagreement = 100 - max_prop) |> 
+      ggplot(aes(avg_importance, n)) +
+      geom_point(aes(color = Proportion_diagreement), alpha = 0.5) +
+      geom_text_repel(data = filter(dat_imp_freq, avg_importance > 0.5),
+                      aes(label = Variable), size = 3) +
+      scale_color_viridis_c() +
+      ggtitle(type) +
+      theme_hpa() +
+      xlab("Average importance") +
+      ylab("Number of seeds")
+    
+    
+  } else {
+    
+    plot <- 
+      dat_imp_freq |> 
+      ggplot(aes(avg_importance, n)) +
+      geom_point(color = pal_anova[type]) +
+      geom_text_repel(data = filter(dat_imp_freq, avg_importance > 0.5),
+                      aes(label = Variable), size = 3) +
+      theme_hpa() +
+      ggtitle(type)
+  }
+
+  return(plot)
+  
 }
 
 plot_top_proteins_seed <- function(protein_importance, 
-                                   plot_color = "grey20",
                                    n = 25) {
   
   top_proteins <- 
@@ -1045,15 +1081,19 @@ plot_top_proteins_seed <- function(protein_importance,
     head(n)
   
   protein_importance |> 
-    filter(Variable %in% top_proteins$Variable) |> 
-    mutate(Variable = factor(Variable, levels = rev(top_proteins$Variable))) |> 
-    ggplot(aes(fct_reorder(Variable, abs(Importance)), abs(Importance))) +
-    geom_quasirandom(size = 0.5, color = plot_color) +
-    geom_boxplot(alpha = 0.5, outlier.color = NA, fill = plot_color) +
-    coord_flip() +
-    xlab("")  +
-    ylab("Protein importance") +
-    theme_hpa() 
+      filter(Variable %in% top_proteins$Variable) |> 
+      mutate(Variable = factor(Variable, levels = rev(top_proteins$Variable)),
+             Sign = case_when(Sign == "POS" ~ "Positive",
+                              Sign == "NEG" ~ "Negative")) |> 
+      ggplot(aes(fct_reorder(Variable, abs(Importance)), abs(Importance))) +
+      geom_quasirandom(size = 0.5, aes(color = Sign)) +
+      geom_boxplot(fill = NA, outlier.color = NA) +
+      scale_color_manual(values = c("Positive" = "#FF7176",
+                                    "Negative" = "#92C9DA")) +
+      coord_flip() +
+      xlab("")  +
+      ylab("Protein importance") +
+      theme_hpa() 
   
 }
 
@@ -1130,3 +1170,4 @@ plot_fixed_effect_distribution <- function(fixed_effects) {
              yparams = list(color = pal_anova["Sex"], fill = pal_anova["Sex"], alpha = 0.5)) |> 
     as.ggplot()
 }
+
