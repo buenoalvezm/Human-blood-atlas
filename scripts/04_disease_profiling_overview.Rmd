@@ -53,12 +53,15 @@ data_summarised <-
   left_join(meta_disease |> 
               select(DAid, Disease), by = "DAid") |> 
   group_by(Disease, Assay, OlinkID) |> 
+  # Generate summaries
   summarise(mean = mean(NPX),
             median = median (NPX),
             Q1 = quantile(NPX, .25),
             Q3 = quantile(NPX, .75)) |> 
-  mutate(Disease = factor(Disease, levels = disease_class_order)) |> 
-           arrange(Disease, Assay) 
+  # Round to two decimals
+  mutate(across(c(mean, median, Q1, Q3), ~ round(.x, 2)),
+         Disease = factor(Disease, levels = disease_class_order)) |> 
+  arrange(Disease, Assay) 
 
 data_summarised |> 
   filter(Assay == "FGF21") |> 
