@@ -89,7 +89,6 @@ test_slopes_wellness <-
   map_df(unique(dat_wellness$Assay), ~ test_mm_slopes(dat_wellness, .x))
 saveRDS(test_slopes_wellness, savepath_data("MM_test", "test_slopes_wellness.rds"))
 
-
 test_slopes_bamse <-
   map_df(unique(dat_bamse$Assay), ~ test_mm_slopes(dat_bamse, .x))
 saveRDS(test_slopes_bamse, savepath_data("MM_test", "test_slopes_bamse.rds"))
@@ -145,10 +144,10 @@ write_tsv(summary_singular_interaction, savepath_data("MM_test", "summary_singul
 # Summary of slope results
 summary_signficance_slopes <- 
   summary_signficance(test_df  = test_slopes_wellness, 
-                    test = "Interaction",
+                    test = "Slopes",
                     dataset = "Wellness") |> 
   bind_rows(summary_signficance(test_df = test_slopes_bamse, 
-                                test = "Interaction",
+                                test = "Slopes",
                                 dataset = "BAMSE"))
 
 write_tsv(summary_signficance_slopes, savepath_data("MM_test", "summary_signficance_slopes.tsv"))
@@ -156,10 +155,10 @@ write_tsv(summary_signficance_slopes, savepath_data("MM_test", "summary_signfica
 
 summary_singular_slopes <- 
   summary_singular(test_df  = test_slopes_wellness, 
-                    test = "Interaction",
+                    test = "Slopes",
                     dataset = "Wellness") |> 
   bind_rows(summary_singular(test_df = test_slopes_bamse, 
-                             test = "Interaction",
+                             test = "Slopes",
                              dataset = "BAMSE"))
 
 write_tsv(summary_singular_slopes, savepath_data("MM_test", "summary_singular_slopes.tsv"))
