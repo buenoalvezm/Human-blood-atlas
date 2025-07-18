@@ -45,6 +45,33 @@ classes <-
   pull()
 ```
 
+## Disease file
+
+```{r}
+data_summarised <- 
+  data_disease |> 
+  left_join(meta_disease |> 
+              select(DAid, Disease), by = "DAid") |> 
+  group_by(Disease, Assay, OlinkID) |> 
+  summarise(mean = mean(NPX),
+            median = median (NPX),
+            Q1 = quantile(NPX, .25),
+            Q3 = quantile(NPX, .75)) |> 
+  mutate(Disease = factor(Disease, levels = disease_class_order)) |> 
+           arrange(Disease, Assay) 
+
+data_summarised |> 
+  filter(Assay == "FGF21") |> 
+  ggplot(aes(Disease, mean)) +
+  geom_point() +
+  geom_point(aes(y = median), color = "red") +
+  geom_point(aes(y = Q1), color = "grey") +
+  geom_point(aes(y = Q3), color = "grey") +
+  theme_hpa(angled = T)
+
+write_excel_csv(data_summarised, savepath_data("Supplementary-files", "Data_S12.csv"))
+ ```
+
 
 # Disease overview
 
@@ -227,7 +254,7 @@ cohort_info <-
   arrange(Disease)
 
   
-write_excel_csv(cohort_info, savepath_data("Supplementary-files", "Data_S4.csv"))
+write_excel_csv(cohort_info, savepath_data("Supplementary-files", "Data_S13.csv"))
 ```
  
 # Case-control
