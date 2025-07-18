@@ -483,80 +483,124 @@ go_bp_enrichment <-
   filter(Type == "GO_BP") 
 
 write_excel_csv(go_bp_enrichment, savepath_data("Supplementary-files", "Data_S7.csv"))
+
+all_enrichment_ext <- read_csv2(savepath_data("Supplementary-files", "Data_S7.csv"))
 ```
 
 ## Visualize number of enriched terms
 
-```{r}
-theme_summary <-
-  all_enrichment_ext %>%
-  left_join(meta_disease |> 
-              select(Disease, Class), by = "Disease") %>%
-  filter(p.adjust < 0.05) %>%
-  group_by(Class, Theme) %>%
-  summarise(n_terms = n_distinct(Description), .groups = "drop") |> 
-  arrange(-n_terms)
+### Summarise GO terms
 
+```{r}
+library(rrvgo)
+
+go_terms <- 
+  all_enrichment_ext %>% 
+  filter(p.adjust < 0.05) %>% 
+  pull(ID) %>% 
+  unique()
+
+go <- 
+  all_enrichment_ext %>% 
+  mutate(p.adjust = as.numeric(p.adjust)) |> 
+  filter(p.adjust < 0.05) 
+
+# Calculate similarity
+simMatrix <- calculateSimMatrix(go_terms,
+                                orgdb="org.Hs.eg.db",
+                                ont="BP",
+                                method="Rel")
+
+
+scores <- setNames(-log10(go$p.adjust), go$ID)
+
+# Reduce terms
+reducedTerms <- reduceSimMatrix(simMatrix,
+                                scores,
+                                threshold=0.7,
+                                orgdb="org.Hs.eg.db")
+
+# Visualize similarity
+heatmapPlot(simMatrix,
+            reducedTerms,
+            annotateParent=TRUE,
+            annotationLabel="parentTerm",
+            fontsize=6)
+
+scatterPlot(simMatrix, reducedTerms)
+
+treemapPlot(reducedTerms)
+```
+
+
+### Barplot
+
+```{r}
 barplot <- 
   all_enrichment_ext %>%
   filter(p.adjust < 0.05) %>%
-  left_join(df_shared_themes) |> 
-  group_by(Disease, Shared_Broad_Category) %>%
+  group_by(Disease) %>%
   summarise(count = n(), .groups = "drop") |> 
   mutate(Disease = factor(Disease, levels = rev(disease_class_order))) |> 
-  ggplot(aes(Disease, count, fill = Shared_Broad_Category)) +
-  geom_col() +
-  scale_fill_manual(values = pal_themes) +
+  ggplot(aes(Disease, count)) +
+  geom_col(fill = "grey") +
   coord_flip() +
   theme_hpa() +
   theme(legend.position = "top")+
+  xlab("") +
   ylab("Number of significant pathways") 
 
 barplot
-ggsave(savepath_results("Manuscript-figures", "enrichment_barplots.pdf"), h = 10, w = 7)
+ggsave(savepath_results("Manuscript-figures", "enrichment_barplot_final.pdf"), h = 10, w = 7)
 ```
 
-# Visualize most common pathway themes
+### Heatmap
 
 ```{r}
+go_reduced <- 
+  reducedTerms |> 
+  as_tibble()
+
+keep_parent_terms <- 
+  all_enrichment_ext %>%
+  filter(p.adjust < 0.05) %>%
+  left_join(go_reduced, by = c("ID" = "go")) |> 
+  group_by(parentTerm) %>%
+  summarise(count = n(), .groups = "drop")  |> 
+  arrange(count) |> 
+  filter(count > 10)
+
 theme_matrix <- 
   all_enrichment_ext %>%
   filter(p.adjust < 0.05) %>%
-  group_by(Disease, Theme) %>%
-  summarise(count = n(), .groups = "drop") %>% 
-  pivot_wider(names_from = Theme, values_from = count, values_fill = 0)
+  left_join(go_reduced |> 
+              filter(parentTerm %in% keep_parent_terms$parentTerm), by = c("ID" = "go")) |> 
+  filter(!is.na(parentTerm)) |> 
+  group_by(Disease, parentTerm) %>%
+  summarise(count = n(), .groups = "drop") |> 
+  pivot_wider(names_from = parentTerm, values_from = count, values_fill = 0)
 
 annotation_diseases <- 
   meta_disease |> 
   distinct(Disease, Class) |> 
   column_to_rownames("Disease")
-
-annotation_themes <- 
-  df_shared_themes |> 
-  column_to_rownames("Theme")
-
+  
 heatmap <- 
-  theme_matrix |>
-  mutate(Disease = factor(Disease, levels = disease_class_order)) |> 
-  arrange(Disease) |> 
-  select(-Other, -Wound_Healing, -Autophagy, -Hemostasis,
-         -Epigenetic_Regulation, -Glucose_Insulin, -Fibrosis_Remodeling) |> 
-  column_to_rownames("Disease") |> 
-  pheatmap(
-    cluster_rows = F,
-    show_rownames = F,
-    clustering_method = "ward.D2",
-    color = colorRampPalette(c("white", "darkblue"))(100),
-    #color = viridis(100, option = "plasma"),
-    annotation_row = annotation_diseases,
-    annotation_col = annotation_themes,
-    annotation_colors = list(Class = pal_class,
-                             Shared_Broad_Category = pal_themes)) |> 
-  as.ggplot()
+    theme_matrix |>
+    mutate(Disease = factor(Disease, levels = disease_class_order)) |> 
+    arrange(Disease) |> 
+    column_to_rownames("Disease") |> 
+    pheatmap(
+      cluster_rows = F,
+      clustering_method = "ward.D2",
+      color = colorRampPalette(c("white", "darkblue"))(100),
+      annotation_row = annotation_diseases,
+      annotation_colors = list(Class = pal_class)) |> 
+      as.ggplot()
 
-heatmap
-ggsave(savepath_results("Manuscript-figures", "enrichment_heatmap.pdf"), h = 10, w = 5.5)
+ggsave(savepath_results("Manuscript-figures", "enrichment_heatmap_final.pdf"), h = 12, w = 12)
 ```
+
 
 # Pleiotropic proteins
 
