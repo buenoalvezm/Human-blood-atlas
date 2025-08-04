@@ -1,5 +1,5 @@
 
-# Pan-Disease Blood Proteome Profiling
+# Pan-disease Human Blood Atlas 
 
 ![GitHub top language](https://img.shields.io/github/languages/top/buenoalvezm/Human-blood-atlas)
 ![License](https://img.shields.io/badge/license-Apache2.0-yellow)
@@ -31,7 +31,7 @@ An open-access Human Disease Blood Atlas has been created as part of the Human P
 
 The dataset includes plasma proteomic profiles from over 8,000 individuals, representing diverse disease categories as well as healthy individuals. Key characteristics of the dataset are:
 
-- **Source of Data**: Collected from multiple biobank cohorts, covering 59 diseases and healthy samples.
+- **Source of Data**: Collected from multiple biobank cohorts, covering 59 diseases and healthy longitudinal cohorts.
 - **Proteomics Approach**: Proximity Extension Assay (PEA) was used for high-throughput analysis, enabling quantification of thousands of proteins from small blood sample volumes.
 - **Proteomics Dataset**: the dataset encompasses up to 5,400 protein measurements across 59 diseases and healthy cohorts, with longitudinal samples from healthy individuals to monitor protein variability over time and disease-related changes.
 - **Data Processing**: quality control (QC) was performed to ensure data reliability and consistency.
@@ -40,7 +40,7 @@ The dataset includes plasma proteomic profiles from over 8,000 individuals, repr
 
 The analysis employed a combination of univariate and multivariate techniques to uncover key health and disease-related protein patterns. Key components include:
 
-- **Exploratory Data Analysis (EDA)**: Principal component analysis (PCA) and correlation analyses were performed to uncover major trends in the dataset.
+- **Exploratory Data Analysis (EDA)**: Uniform Manifold Approximation and Projection (UMAP) and correlation analyses were performed to uncover major trends in the dataset.
 - **Analyses of variance**: Statistical analyses  were applied to identify proteins correlated with disease and demographic factors (e.g., age, sex, BMI). 
 - **Differential Expression Analysis**: Identified proteins that show significant changes in abundance across disease categories.
 - **Machine Learning Classification**: Lasso-based models were applied for disease classification and biological age prediction.
@@ -49,19 +49,19 @@ The analysis employed a combination of univariate and multivariate techniques to
 
 Several key insights were derived from the analysis of the dataset:
 
-- **Disease-specific biomarkers**: distinct protein profiles were identified for specific diseases. Some proteins were elevated across multiple diseases, suggesting their role as markers of inflammation rather than specific diseases.
 - **Age and disease correlations**: strong correlations were found between protein levels and both biological and chronological age. Disease presence was found to be the primary factor contributing to variation in protein profiles.
+- **Disease-specific biomarkers**: distinct protein profiles were identified for specific diseases. Some proteins were elevated across multiple diseases, suggesting their role as markers of inflammation rather than specific diseases.
 - **Cross-disease patterns**: certain proteins exhibited elevated levels across multiple disease categories, such as cancer and autoimmune diseases, indicating shared biological mechanisms.
 - **Disease-specific signatures**: we identified proteins associated to each of the analyzed diseases.
   
 ## Usage
 
-To run the analysis and reproduce the results:
+To explore the code used for the analysis described in the manuscript:
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/buenoalvezm/Pan-disease-profiling.git
-   cd Pan-disease-profiling
+   git clone https://github.com/buenoalvezm/Human-blood-atlas.git
+   cd Human-blood-atlas
    ```
 2. Install R dependencies using renv:
    ```R
@@ -71,9 +71,8 @@ To run the analysis and reproduce the results:
 ## Directory Structure
 
 📁 Pan-disease-profiling/  
-├── 📂 data/               # Processed datasets (or links to access them)  
 ├── 📂 scripts/            # Analysis scripts (R)  
-├── 📂 server-scripts/     # Analysis scripts for HPC (R)  
+├── 📂 server-scripts/     # Analysis scripts for HPC (R/shell)  
 ├── 📜 README.md           # Overview of the project  
 └── 📜 LICENSE             # License file
 
