@@ -8,7 +8,7 @@ source("scripts/functions/functions_utility.R")
 source("scripts/functions/functions_visualization.R")
 source("scripts/functions/themes_palettes.R")
 
-# Look at control samples - to explore batch effects
+# Look at control samples - to explore batch effects (raw data)
 data_NPX <- readr::read_delim("../Human-disease-blood-atlas/data/UD-2950_B1-B4_NPX_2023-03-29/UD-2950_B1-B4_NPX_2023-03-29.csv", delim = ";")
 manifest <- import_df("data/samples_2025-01-30.xlsx")
 
@@ -27,18 +27,20 @@ order_plates <-
   arrange(BatchID, PlateID) 
 
 data_controls |> 
-  mutate(PlateID = gsub("Run", "", PlateID),
-         PlateID = as.numeric(PlateID)) |> 
-  mutate(PlateID = factor(PlateID, levels = order_plates$PlateID),
-         SampleID_Original = case_when(SampleID_Original == "DA_Patient1" ~ "Healthy donor 1",
-                                       SampleID_Original == "DA_Patient5" ~ "Healthy donor 2")) |> 
-  ggplot(aes(x = PlateID, y = NPX, fill = BatchID, color = BatchID)) +
-  geom_rain(point.args= c(size = 1, alpha = 0.1),
-            line.args = c(size = 0.3)) +
+  mutate(SampleID_Original = case_when(
+    SampleID_Original == "DA_Patient1" ~ "Healthy donor 1",
+    SampleID_Original == "DA_Patient5" ~ "Healthy donor 2"
+  )) |> 
+  group_by(SampleID_Original, BatchID, Assay) |> 
+  summarise(NPX = mean(NPX)) |> 
+  ggplot(aes(x = BatchID, y = NPX)) +
+  geom_line(aes(group = interaction(Assay, SampleID_Original)), color = "grey", alpha =0.4) +
+  geom_quasirandom(aes(fill = BatchID, color = BatchID), dodge.width = 0.7, alpha = 0.3) +
+  geom_boxplot(color = "white", outlier.color = NA, alpha = 0.6) +
   facet_wrap(~SampleID_Original, ncol = 1) +
   scale_color_brewer(palette = "Dark2") +
   scale_fill_brewer(palette = "Dark2") +
-  theme_hpa(angled = T)
+  theme_hpa(angled = TRUE)
 
 # Save results
-ggsave(savepath("rancloud_patient1_patient5.pdf"), h = 10 , w = 18)
+ggsave(savepath_results("Manuscript-figures", "rancloud_patient1_patient5.pdf"), h = 10 , w = 7)
