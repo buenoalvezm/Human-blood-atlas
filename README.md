@@ -6,54 +6,47 @@
 ![GitHub last commit](https://img.shields.io/github/last-commit/buenoalvezm/Human-blood-atlas)
 ![GitHub issues](https://img.shields.io/github/issues/buenoalvezm/Human-blood-atlas)
 
-## Table of Contents
+## Table of contents
 
-1. [Project Overview](#project-overview)
-2. [Data Description](#data-description)
+1. [Project overview](#project-overview)
+2. [Data description](#data-description)
 3. [Methodology](#methodology)
 4. [Usage](#usage)
-5. [Directory Structure](#directory-structure)
-6. [Results & Insights](#results--insights)
+5. [Directory structure](#directory-structure)
+6. [Results & insights](#results--insights)
 7. [License](#license)
-8. [Contact Information](#contact-information)
+8. [Contact](#contact)
 
-## Project Overview
+## Project overview
 
-This project presents a comprehensive blood proteome profiling atlas, aimed at understanding human health states by analyzing proteomic signatures across various diseases. The core objective of the project is to identify disease-specific biomarkers through machine learning and integrate these findings into an open-access resource.
+This repository contains the code and resources for the study *A human pan-disease blood atlas of the circulating proteome*, which presents a large-scale analysis of blood protein profiles across various diseases and longitudinal healthy cohorts aimed at understanding human health states. The study leverages Proximity Extension Assay (PEA) proteomics to identify proteins that vary across human development, associated to demographic variables susch as age, sex and BMI, and disease-specific and shared biomarkers. An open-access **Disease Blood Resource** has been created as part of the Human Protein Atlas (www.proteinatlas.org/humanproteome/blood), enabling researchers to explore protein profiles across diseases and healthy individuals.
 
-This research integrates a pan-disease strategy across major disease categories such as cancer, autoimmune, cardiovascular, metabolic, and infectious diseases, leveraging state-of-the-art targeted proteomics using the Proximity Extension Assay (PEA). This work also incorporates longitudinal analysis of healthy individuals from childhood through adulthood, providing insights into the stability and variability of protein profiles.
+## Data description
 
-This repository contains the code and resources for the study "Pan-Disease Blood Proteome Profiling", which presents a large-scale analysis of blood protein profiles across multiple human diseases. The study leverages Proximity Extension Assay (PEA) proteomics to identify disease-specific and shared biomarkers, contributing to a deeper understanding of disease biology and potential translational applications.
+This study is based on plasma proteome profiles from over 8,000 individuals, encompassing both healthy individuals and patients across a wide spectrum of diseases. Key characteristics of the dataset include:
 
-An open-access Human Disease Blood Atlas has been created as part of the Human Protein Atlas (www.proteinatlas.org), enabling researchers to explore protein profiles across diseases, healthy individuals, and different demographic factors.
-
-## Data Description
-
-The dataset includes plasma proteomic profiles from over 8,000 individuals, representing diverse disease categories as well as healthy individuals. Key characteristics of the dataset are:
-
-- **Source of Data**: Collected from multiple biobank cohorts, covering 59 diseases and healthy longitudinal cohorts.
-- **Proteomics Approach**: Proximity Extension Assay (PEA) was used for high-throughput analysis, enabling quantification of thousands of proteins from small blood sample volumes.
-- **Proteomics Dataset**: the dataset encompasses up to 5,400 protein measurements across 59 diseases and healthy cohorts, with longitudinal samples from healthy individuals to monitor protein variability over time and disease-related changes.
-- **Data Processing**: quality control (QC) was performed to ensure data reliability and consistency.
+- **Cohort composition**: samples were collected from multiple biobank cohorts, including healthy longitudinal cohorts (BAMSE, Wellness), cross-sectional disease cohorts (Human Disease Blood Atlas, U-CAN), and a prospective disease cohort (UKB-PPP).
+- **Proteomic platform**: protein profiling was performed using Proximity Extension Assay (PEA), a high-throughput, antibody-based method that enables simultaneous quantification of thousands of proteins from minimal plasma volumes.
 
 ## Methodology
 
 The analysis employed a combination of univariate and multivariate techniques to uncover key health and disease-related protein patterns. Key components include:
 
 - **Exploratory Data Analysis (EDA)**: Uniform Manifold Approximation and Projection (UMAP) and correlation analyses were performed to uncover major trends in the dataset.
-- **Analyses of variance**: Statistical analyses  were applied to identify proteins correlated with disease and demographic factors (e.g., age, sex, BMI). 
-- **Differential Expression Analysis**: Identified proteins that show significant changes in abundance across disease categories.
-- **Machine Learning Classification**: Lasso-based models were applied for disease classification and biological age prediction.
+- **Analyses of variance**: statistical analyses were applied to identify proteins correlated with disease and demographic factors (e.g., age, sex, BMI). 
+- **Differential abundance analysis**: applied to all measured proteins to identify significant changes in abundance across diseases.
+- **Machine learning**: lasso-based models were applied for disease classification and prediction of biological age, sex, and BMI.
 
-## Results & Insights
+## Results & insights
 
 Several key insights were derived from the analysis of the dataset:
 
-- **Age and disease correlations**: strong correlations were found between protein levels and both biological and chronological age. Disease presence was found to be the primary factor contributing to variation in protein profiles.
-- **Disease-specific biomarkers**: distinct protein profiles were identified for specific diseases. Some proteins were elevated across multiple diseases, suggesting their role as markers of inflammation rather than specific diseases.
-- **Cross-disease patterns**: certain proteins exhibited elevated levels across multiple disease categories, such as cancer and autoimmune diseases, indicating shared biological mechanisms.
-- **Disease-specific signatures**: we identified proteins associated to each of the analyzed diseases.
-  
+- **Stability of the plasma proteome across human lifespan**: the most pronounced changes in protein levels occurred during puberty and the transition to adulthood, while the adult plasma proteome remained remarkably stable over time.
+- **Age and disease correlations**: strong correlations were found between protein levels and chronological age, but the presence of disease emerged as the main contributor to variation in protein profiles.
+- **Biological age prediction**: machine learning models trained on plasma protein profiles accurately predicted biological age, highlighting proteins with potential relevance for aging and age-related diseases.
+- **Insights from a pan-disease perspective**: By integrating differential abundance and machine learning analyses across 59 diseases, we identified proteins with distinct disease-specific profiles as well as those consistently elevated across multiple disease categories, such as cancer and autoimmune disorders. This pan-disease approach enabled us to distinguish proteins with potential diagnostic relevance from those involved in broader systemic responses, such as inflammation.
+
+ 
 ## Usage
 
 To explore the code used for the analysis described in the manuscript:
@@ -68,7 +61,7 @@ To explore the code used for the analysis described in the manuscript:
    renv::restore()
    ```
 
-## Directory Structure
+## Directory structure
 
 📁 Pan-disease-profiling/  
 ├── 📂 scripts/            # Analysis scripts (R)  
