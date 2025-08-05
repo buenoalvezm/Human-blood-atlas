@@ -66,14 +66,14 @@ To explore the code used for the analysis described in the manuscript:
 ```bash
 📁 Human-blood-atlas/
 ├── 📂 scripts/                # Core analysis scripts (R Markdown)
-│   ├── 01_wellness_profiling.Rmd        # Profiling in the Wellness cohort
-│   ├── 02_bamse_age_profiling.Rmd       # Profiling in the BAMSE cohort
-│   ├── 03_disease_variability.Rmd       # Variance analysis across diseases
-│   ├── 04_disease_profiling_overview.Rmd# Overview of disease profiles
-│   ├── 05_disease_profiling_DE.Rmd      # Differential expression across diseases
-│   ├── 06_disease_profiling_ML.Rmd      # Disease classification using ML
-│   ├── 07_validation_cancer.Rmd         # Cancer validation (U-CAN cohort)
-│   └── 08_validation_ukb.Rmd            # Cancer validation (UKB-PPP cohort)
+│   ├── 01_wellness_profiling.Rmd         # Profiling in the Wellness cohort
+│   ├── 02_bamse_age_profiling.Rmd        # Profiling in the BAMSE cohort
+│   ├── 03_disease_variability.Rmd        # Variance analysis across diseases
+│   ├── 04_disease_profiling_overview.Rmd # Overview of disease profiles
+│   ├── 05_disease_profiling_DE.Rmd       # Differential expression across diseases
+│   ├── 06_disease_profiling_ML.Rmd       # Disease classification using ML
+│   ├── 07_validation_cancer.Rmd          # Cancer validation (U-CAN cohort)
+│   └── 08_validation_ukb.Rmd             # Cancer validation (UKB-PPP cohort)
 ├── 🖥️ server-scripts/         # Scripts for HPC execution (R/shell)
 ├── 📄 README.md               # Overview of the project
 └── 📜 LICENSE                 # License file
