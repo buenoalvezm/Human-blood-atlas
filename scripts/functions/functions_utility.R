@@ -50,3 +50,18 @@ savepath_data <-
     return(savename)
     
   }
+
+# Generate path to save data - in results
+savepath_results <-
+  function(folder, savename) {
+    dir.create("results/", showWarnings = FALSE)
+    result_folder <- paste0("results/", folder)
+    dir.create(result_folder, showWarnings = FALSE)
+    
+    savename <-
+      paste0(result_folder, "/", savename)
+    
+    return(savename)
+  
+    }
+
