@@ -1,5 +1,8 @@
+#### Title: Functions for data analyses 
+#### Author: María Bueno Álvez
+#### Description: script collecting functions to perform main data analyses
+#### Last edited : 06/08/2025
 
-# Functions for main analyses
 library(lmerTest)
 library(performance)
 library(effectsize)

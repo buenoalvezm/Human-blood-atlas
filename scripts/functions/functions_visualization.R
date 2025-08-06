@@ -1,5 +1,8 @@
+#### Title: Functions for data visualization 
+#### Author: María Bueno Álvez
+#### Description: script collecting functions to visualize results
+#### Last edited : 06/08/2025
 
-# Functions for visualization
 library(ggrepel)
 library(tidytext)
 library(embed)

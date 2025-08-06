@@ -1,5 +1,8 @@
+#### Title: Themes & palettes
+#### Author: María Bueno Álvez
+#### Description: script collecting themes, levels, and palettes used in the analyses
+#### Last edited : 06/08/2025
 
-# Palettes
 library(RColorBrewer)
 
 ## Wellness - detectability

@@ -1,5 +1,8 @@
+#### Title: Utility functions
+#### Author: María Bueno Álvez
+#### Description: script collecting utility functions
+#### Last edited : 06/08/2025
 
-# Utility functions
 library(tidyverse)
 
 # Import dataframe
