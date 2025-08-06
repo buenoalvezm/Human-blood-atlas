@@ -1,5 +1,3 @@
-
-
 #### Title: Batch effect exploration
 #### Author: María Bueno Álvez
 #### Description: script visualizing NPX distribution across plates for two healthy donors to assess batch effects
