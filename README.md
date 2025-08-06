@@ -1,6 +1,7 @@
 
 # Pan-disease Human Blood Atlas 
 
+[![DOI](https://zenodo.org/badge/902968624.svg)](https://doi.org/10.5281/zenodo.16753675)
 ![GitHub top language](https://img.shields.io/github/languages/top/buenoalvezm/Human-blood-atlas)
 ![License](https://img.shields.io/badge/license-Apache2.0-yellow)
 ![GitHub last commit](https://img.shields.io/github/last-commit/buenoalvezm/Human-blood-atlas)
