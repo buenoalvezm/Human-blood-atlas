@@ -1,5 +1,5 @@
 ---
-title: "04_validation"
+title: "08_validation_ukb"
 output: html_document
 autor: "María Bueno Álvez"
 date: "2024-12-13"
@@ -17,352 +17,374 @@ source("scripts/functions/themes_palettes.R")
 
 # Read in data - UKB
 ukb_data <- read_delim("data/UKBB_cancer_olink.txt")
+data_disease <-
+  read_tsv(
+    "../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_data_phase1.tsv"
+  )
 
 ukb_meta <- read_delim("data/UKBB_cancer_meta.txt")
+
+# Extract information from data and metadata
 ukb_meta <-
-  ukb_meta |> 
+  ukb_meta |>
   distinct(eid, .keep_all = TRUE)
 
-ukb_data <- 
-  ukb_data |> 
+ukb_data <-
+  ukb_data |>
   separate(meaning,  c("Assay", "Meaning")) |>
   select(eid, Assay, NPX = result)
-
-
-olink_targets <-  import_df("data/overlap_olink_platforms.csv")
 ```
 
-# UKB
 
-## Load data exported from UKB-RAP
+# Time to diagnosis
 
-```{r}
+Define time to diagnosis groups and visualize for each cancer type.
 
-```
-
-## Time to diagnosis
+## Define diagnosis groups
 
 ```{r}
-# Add n label
-ukb_meta |> 
-  mutate(time_to_diagnosis = Cancer_age_diagnosis - Age_sample_collect,
-         Cancer_name = ifelse(Cancer_name %in% c("Colon_cancer", "Rectum_cancer"), "Colorectal_cancer", Cancer_name)) |> 
-  ggplot(aes(time_to_diagnosis)) +
-  geom_histogram(fill = pal_class["Cancer"]) +
-  geom_vline(xintercept = 0) +
-  scale_fill_viridis_c() +
-  #geom_text(aes(label = n), vjust = -0.5) +
-  facet_wrap(~Cancer_name, nrow = 1, scales = "free_y") +
-  theme_hpa() +
-  xlab("Time to diagnostis") +
-  ylab("n")
-
-
-ggsave(savepath("age_ukb.png"), h = 5, w = 15)
-
-
-ukb_dat <- 
-  ukb_meta |> 
-  mutate(time_to_diagnosis = Age_sample_collect - Cancer_age_diagnosis,
-         Cancer_name = ifelse(Cancer_name %in% c("Colon_cancer", "Rectum_cancer"), "Colorectal_cancer", Cancer_name),
-         Group = case_when(time_to_diagnosis <= -7 ~ "> 7 years before",
-                           time_to_diagnosis > -7 & time_to_diagnosis <= -5 ~ "5-7 years before",
-                           time_to_diagnosis > -5 & time_to_diagnosis <= -3 ~ "3-5 years before",
-                           time_to_diagnosis > -3 & time_to_diagnosis <= -1 ~ "1-3 years before",
-                           time_to_diagnosis > -1 & time_to_diagnosis <= 1 ~ "1 year before/after",
-                           time_to_diagnosis > 1 & time_to_diagnosis <= 3 ~ "1-3 years after",
-                           time_to_diagnosis > 3 ~ "> 3 years after"),
-         Group = factor(Group, levels = names(pal_ukb_2[-1]))) |> 
-  filter(!time_to_diagnosis > 20) 
-
-ukb_cancers <- c(
-                 "Colorectal_cancer",
+# Define UKB cancers
+ukb_cancers <- c("Colorectal_cancer",
                  "Lung_cancer",
                  "Ovary_cancer",
-                 #"Pancreas_cancer",
-                 "Prostate_cancer"
-                 )
+                 "Prostate_cancer")
 
-ukb_dat |> 
-  filter(Cancer_name %in% ukb_cancers) |> 
-  mutate(Cancer_name = factor(Cancer_name, levels = ukb_cancers)) |> 
-  ggplot(aes(time_to_diagnosis, fill = Group)) +
+# Parse UKB metadata - define time to diagnosis groups
+ukb_dat <-
+  ukb_meta |>
+  mutate(
+    time_to_diagnosis = Age_sample_collect - Cancer_age_diagnosis,
+    Cancer_name = ifelse(
+      Cancer_name %in% c("Colon_cancer", "Rectum_cancer"),
+      "Colorectal_cancer",
+      Cancer_name
+    ),
+    Group = case_when(
+      time_to_diagnosis <= -7 ~ "> 7 years before",
+      time_to_diagnosis > -7 &
+        time_to_diagnosis <= -5 ~ "5-7 years before",
+      time_to_diagnosis > -5 &
+        time_to_diagnosis <= -3 ~ "3-5 years before",
+      time_to_diagnosis > -3 &
+        time_to_diagnosis <= -1 ~ "1-3 years before",
+      time_to_diagnosis > -1 &
+        time_to_diagnosis <= 1 ~ "1 year before/after",
+      time_to_diagnosis > 1 &
+        time_to_diagnosis <= 3 ~ "1-3 years after",
+      time_to_diagnosis > 3 ~ "> 3 years after"
+    ),
+    Group_2 = case_when(
+      time_to_diagnosis <= -5 ~ "> 5 years before",
+      time_to_diagnosis > -5 &
+        time_to_diagnosis <= -3 ~ "3-5 years before",
+      time_to_diagnosis > -3 &
+        time_to_diagnosis <= -1 ~ "1-3 years before",
+      time_to_diagnosis > -1 &
+        time_to_diagnosis <= 1 ~ "1 year before/after",
+      time_to_diagnosis > 1  ~ "> 1 year after"
+    ),
+    Group_3 = case_when(
+      time_to_diagnosis <= -3 ~ "> 3 years before",
+      time_to_diagnosis > -3 &
+        time_to_diagnosis <= 0 ~ "Up to 3 years before",
+      time_to_diagnosis > 0 ~ "After diagnosis"
+    ),
+    Group_2 = factor(Group_2, levels = names(pal_ukb_2)),
+    Group_3 = factor(Group_2, levels = names(pal_ukb_3)),
+    Group = factor(Group, levels = names(pal_ukb[-1]))
+  ) |>
+  filter(!time_to_diagnosis > 20)
+```
+
+## Visualize
+
+```{r}
+# Plot time to diagnosis distribution per cancer
+ukb_dat |>
+  filter(Cancer_name %in% ukb_cancers) |>
+  mutate(Cancer_name = factor(
+    Cancer_name,
+    levels = c(
+      "Lung_cancer",
+      "Colorectal_cancer",
+      "Prostate_cancer",
+      "Ovary_cancer"
+    )
+  )) |>
+  ggplot(aes(time_to_diagnosis, fill = Group_2)) +
   geom_histogram() +
   geom_vline(xintercept = 0) +
   scale_fill_manual(values = pal_ukb_2) +
-  facet_wrap(~Cancer_name, nrow = 1, scales = "free_y") +
+  facet_wrap(~ Cancer_name, nrow = 1, scales = "free_y") +
   theme_hpa() +
   ggtitle("") +
   xlab("Time to diagnosis")
-  
 
-ggsave(savepath_results("Publication-figures","age_ukb.pdf"), h = 4.5, w = 16)
+ggsave(savepath_results("Manuscript-figures", "age_ukb.pdf"),
+       h = 3.5,
+       w = 12)
 ```
-## Examples
+# Machine learning 
+
+Test models developed in the U-CAN cohort for lung, colorectal, ovarian and prostate cancer in several UKB diagnosis groups.
+
+## Load U-CAN models
 
 ```{r}
-# Examples
-selected_cancers <- 
-  c("Lung cancer",
-    "Colorectal cancer",
-    "Pancreatic cancer",
-    "Prostate cancer",
-    "Ovarian cancer")
+# Define U - CAN cancers
+cancers <- c("Lung cancer",
+             "Colorectal cancer",
+             "Prostate cancer",
+             "Ovarian cancer")
 
-top_prots <- 
-  combined_de |> 
-  filter(Disease %in% selected_cancers,
-         Control == "All other diseases") |> 
-  group_by(Disease) |> 
-  top_n(1, -adj.P.Val) |> 
-  ungroup() |> 
-  mutate(Cancer_name = case_when(Disease == "Pancreatic cancer" ~ "Pancreas_cancer",
-                                  Disease == "Prostate cancer" ~ "Prostate_cancer",
-                                  Disease == "Lung cancer" ~ "Lung_cancer",
-                                  Disease == "Colorectal cancer" ~ "Colorectal_cancer"))  |> 
-  filter(Assay != "MMP12")
+# Load U-CAN model results
+models_ucan_p1 <- readRDS(savepath_data("ML", "models_ucan_p1.rds"))
+```
 
-resource_data %>%
-  left_join(resource_meta |> 
-              select(DAid, Disease, Class), by = "DAid") |> 
-  filter(Assay %in% top_prots$Assay) %>% 
-  mutate(Disease = factor(Disease, levels = disease_class_order)) |> 
-  ggplot(aes(Disease, NPX, color = Class, fill = Class)) +
-  geom_quasirandom( size = 0.5, show.legend = F, alpha = 0.7) +
-  geom_boxplot(alpha = 0.3, color = "black", outlier.colour = NA, show.legend = F) +
-  scale_color_manual(values = pal_class) +
-  scale_fill_manual(values = pal_class) +
-  facet_wrap(~Assay, nrow = 1, scales = "free_y") +
-  xlab("") +
-  ylab("Protein expression") +
-  coord_flip() +
-  theme_hpa(angled = T, axis_y = F) 
+## Prepare UKB data
+
+```{r}
+ukb_wide <-
+  ukb_data |>
+  left_join(ukb_dat, by = "eid") |>
+  select(DAid = eid, Assay, NPX, Cancer_name) |>
+  mutate(
+    Disease = case_when(
+      Cancer_name == "Colorectal_cancer" ~ "Colorectal cancer",
+      Cancer_name == "Lung_cancer" ~ "Lung cancer",
+      Cancer_name == "Prostate_cancer" ~ "Prostate cancer",
+      Cancer_name == "Ovary_cancer" ~ "Ovarian cancer"
+    )
+  ) |>
+  select(-Cancer_name) |>
+  filter(Assay != "HLA") |> # Formatting issue
+  pivot_wider(names_from = Assay,
+              values_from = NPX,
+              values_fn = first) |>
+  filter(!is.na(Disease)) |>
+  mutate(DAid = as.character(DAid))
+
+# Identify non-mapping proteins Olink 1.5K to 3K
+missing_3072 <-
+  data_disease |>
+  distinct(Assay) |>
+  filter(!Assay %in% unique(ukb_data$Assay)) |>
+  pull(Assay)
+
+ukb_wide[missing_3072] <- NA
+```
+
+## Run predictions
+
+```{r}
+predictions_ukb <-
+  map_df(cancers, function(cancer) {
+    current_data <-
+      ukb_wide |>
+      mutate(Variable = case_when(
+        Disease == cancer ~ paste0("1_", cancer),
+        Disease != cancer ~ paste0("0_Control")
+      )) |>
+      select(-Disease) |>
+      mutate(Variable = factor(Variable))
+    
+    if (cancer %in% female_diseases) {
+      current_data <-
+        current_data |>
+        left_join(ukb_dat |>
+                    mutate(eid = as.character(eid)) |>
+                    select(eid, Sex),
+                  by = c("DAid" = "eid")) |>
+        filter(Sex == 0) |>
+        select(-Sex)
+    } else if (cancer %in% male_diseases) {
+      current_data <-
+        current_data |>
+        left_join(ukb_dat |>
+                    mutate(eid = as.character(eid)) |>
+                    select(eid, Sex),
+                  by = c("DAid" = "eid")) |>
+        filter(Sex == 1) |>
+        select(-Sex)
+    } else {
+      current_data <- current_data
+    }
+    
+    current_model <- models_ucan_p1[[cancer]]$model
+    
+    new_predictions <-
+      predict(current_model, new_data = current_data, type = "prob")
+    
+    new_predictions |>
+      mutate(DAid = current_data$DAid) |>
+      left_join(group_info) |>
+      mutate(Variable = current_data$Variable,
+             Cancer = cancer)
+    
+  })
+
+saveRDS(predictions_ukb, savepath_data("ML", "predictions_ukb.rds"))
+```
+ 
+## Change granularity (diagnosis groups)
+
+```{r}
+all_pred <-
+  map_df(cancers, function(cancer) {
+    new_predictions <-
+      predictions_ukb |>
+      filter(Cancer == cancer)
+    
+    group_info <-
+      ukb_wide |>
+      filter(Disease == cancer) |>
+      left_join(ukb_dat |>
+                  select(DAid = eid, Group_2) |>
+                  mutate(DAid = as.character(DAid)),
+                by = "DAid") |>
+      select(DAid, Group_2)
+    
+    
+    map_df(as.character(unique(group_info$Group_2)), function(group) {
+      new_predictions_ext <-
+        new_predictions |>
+        left_join(group_info)
       
-ggsave(savepath("examples_proteins.pdf"), h = 15, w = 10)
+      current_roc <-
+        new_predictions_ext |>
+        filter(Variable == "0_Control" | Group_2 == group) |>
+        mutate(Variable = factor(Variable)) |>
+        roc_curve(truth = Variable,
+                  paste0(".pred_1_", cancer),
+                  event_level = "second") |>
+        mutate(Group = group)
+      
+      new_ext_res <-
+        new_predictions_ext |>
+        filter(Variable == "0_Control" | Group_2 == group) |>
+        mutate(Variable = factor(Variable)) |>
+        rename(prediction = paste0(".pred_1_", cancer))
+      
+      auc <- pROC::auc(new_ext_res$Variable, new_ext_res$prediction)
+      ci <-
+        pROC::ci.auc(new_ext_res$Variable, new_ext_res$prediction)
+      
+      # Combine
+      combined_roc_auc <-
+        current_roc |>
+        mutate(
+          AUC = as.numeric(auc),
+          CI_lower = as.numeric(ci)[[1]],
+          CI_upper = as.numeric(ci)[[3]],
+          Cancer = cancer
+        )
+    })
+  })        
+```
+
+## ROC
+
+```{r}
+tiles <-
+  all_pred |>
+  mutate(Cancer = factor(Cancer, levels = cancers),
+         Group = factor(Group, levels = names(pal_ukb_2))) |>
+  distinct(Group, Cancer, AUC) |>
+  mutate(
+    specificity = case_when(
+      Group == "> 5 years before" ~ 0.1,
+      Group == "3-5 years before" ~ 0.1,
+      Group == "1-3 years before" ~ 0.1,
+      Group == "1 year before/after" ~ 0.1,
+      Group == "> 1 year after" ~ 0.1
+    ),
+    sensitivity = case_when(
+      Group == "> 5 years before" ~ 0.15,
+      Group == "3-5 years before" ~ 0.2,
+      Group == "1-3 years before" ~ 0.25,
+      Group == "1 year before/after" ~ 0.3,
+      Group == "> 1 year after" ~ 0.35
+    ),
+    Cancer = factor(Cancer, levels = rev(cancers)),
+    Group = factor(Group, levels = names(pal_ukb_2))
+  )
 
 
-ukb_dat |> 
-  left_join(ukb_meta, by = c("DAid" = "eid"))  |> 
-  mutate(time_to_diagnosis = Age_sample_collect - Cancer_age_diagnosis,
-         Cancer_name = ifelse(Cancer_name %in% c("Colon_cancer", "Rectum_cancer"), "Colorectal_cancer", Cancer_name),
-         Group = case_when(time_to_diagnosis <= -7 ~ "> 7 years before",
-                           time_to_diagnosis > -7 & time_to_diagnosis <= -5 ~ "5-7 years before",
-                           time_to_diagnosis > -5 & time_to_diagnosis <= -3 ~ "3-5 years before",
-                           time_to_diagnosis > -3 & time_to_diagnosis <= -1 ~ "1-3 years before",
-                           time_to_diagnosis > -1 & time_to_diagnosis <= 1 ~ "1 year before/after",
-                           time_to_diagnosis > 1 & time_to_diagnosis <= 3 ~ "1-3 years after",
-                           time_to_diagnosis > 3 ~ "> 3 years after"),
-         Group = factor(Group, levels = names(pal_ukb_2[-1]))) |> 
-  inner_join(top_prots |> 
-               select(Cancer_name, Assay),
-             by = c("Cancer_name",
-                    "Assay")
-                      ) |> 
-#  filter(Assay %in% top_prots$Assay) |> 
-  ggplot(aes(Group, NPX, color = Group, fill = Group)) +
-  geom_quasirandom(alpha = 0.8, size = 0.5) +
-  geom_boxplot(outlier.color = NA, alpha = 0.4, color = "black", ) +
-#  stat_summary(fun = mean, geom = "point", shape = 95, size = 6, color = "black") +
-  facet_wrap(Cancer_name~Assay, scales = "free_y", nrow = 1) +
+all_pred |>
+  mutate(Cancer = factor(Cancer, levels = cancers),
+         Group = factor(Group, levels = names(pal_ukb_2))) |>
+  ggplot(aes(
+    x = 1 - specificity,
+    y = sensitivity,
+    color = Group
+  )) +
+  geom_line(size = 0.8, alpha = 0.6) +  # Lighter ROC curves
+  annotate(
+    "segment",
+    x = 0,
+    y = 0,
+    xend = 1,
+    yend = 1,
+    colour = 'grey50',
+    linetype = 'dashed',
+    size = 0.8
+  )  +
+  geom_tile(
+    data = tiles,
+    aes(fill = Group),
+    width = 0.1,
+    height = 0.05,
+    show.legend = FALSE
+  ) +
+  geom_text(
+    data = tiles,
+    aes(label = round(AUC, 2)),
+    size = 3,
+    color = "white",
+    fontface = "bold",
+    show.legend = FALSE
+  ) +
+  facet_wrap( ~ Cancer, nrow = 1, scales = "free_x") +
+  scale_x_continuous(breaks = c(0, 1)) +
+  scale_y_continuous(breaks = c(0, 1)) +
   scale_color_manual(values = pal_ukb_2) +
   scale_fill_manual(values = pal_ukb_2) +
-  theme_hpa(angled = T, axis_x = F)+
-  xlab("") 
-
-
-ggsave(savepath("ukb_examples_proteins.pdf"), h = 3, w = 13)
-```
-
-
-## Differential expression
-
-```{r}
-
-a <- 
-  ukb_data |>
-  filter(!Assay == "HLA") |> 
-  inner_join(ukb_dat |> 
-  filter(Cancer_name == cancer) |> 
-  select(eid, time_to_diagnosis)) |> 
-    mutate(eid = as.character(eid))
-
-somehow_dupps <- 
-  a |> 
-  count(eid) |> 
-  arrange(-n) |> 
-  filter(n > 2000)
-
-cancer <- "Ovary_cancer"
-
-de_ukb <- 
-  map_df(c("Colorectal_cancer", "Lung_cancer", "Ovary_cancer", "Prostate_cancer"), function(cancer) {
-  
-  join_data <<- 
-  ukb_data |>
-  filter(!Assay == "HLA") |> 
-  inner_join(ukb_dat |> 
-  filter(Cancer_name == cancer) |> 
-  select(eid, time_to_diagnosis)) |> 
-    mutate(eid = as.character(eid)) |> 
- #mutate(Sex = factor(Sex)) |> 
-  filter(time_to_diagnosis < 1,
-         !eid %in% somehow_dupps$eid) |> 
-  pivot_wider(names_from = "Assay", values_from = "NPX") |> 
-    rename(DAid = eid)
-
-do_limma_continuous(join_data = join_data,
-                    variable = "time_to_diagnosis",
-                    correct = c(),
-                   correct_type = c(),
-                    pval_lim = 0.05,
-                    logfc_lim = 0) |> 
-  mutate(Cancer_name = cancer) 
-})
-
-de_ukb |> count(Cancer_name)
-```
-
-## Volcano plots
-
-```{r}
-
-labels <- 
-  de_ukb |> 
-  group_by(Cancer_name) |> 
-  top_n(6, -adj.P.Val) |> 
-  filter(sig != " not significant")
-
-de_ukb |> 
-  ggplot(aes(x = logFC, y = -log10(adj.P.Val), color = sig, label = Assay)) +
-  geom_point(size = 1, alpha = 0.4) + 
-  geom_text_repel(data = labels, size = 2, show.legend = F) +
-  geom_hline(yintercept = -log10(0.05), linetype = 'dashed', color = "darkgrey") +
- # geom_vline(xintercept = -cutoff, linetype = 'dashed', color = "darkgrey") +
-#  geom_vline(xintercept = cutoff, linetype = 'dashed', color = "darkgrey") +
-  scale_color_manual(values = pal_de) +
-  facet_wrap(~Cancer_name, scales = "free", nrow = 1) +
-  theme_hpa() +   
+  theme_hpa() +
   theme(axis.text = element_text(size = 8),
-        legend.position = "right") +
-  xlab("Model coefficient")
+        legend.position = "top")
 
-ggsave(savepath_results("Publication-figures", "ukb_de.pdf"), h = 3, w = 12)
-```
-
-## Proteins
-
-```{r}
-
-plot_nefl <- boxplot_ukb("Lung_cancer", "NEFL") 
-#plot_cxcl8 <- boxplot_ukb("Colorectal_cancer", "CXCL8") 
-plot_ceacam5 <- boxplot_ukb("Lung_cancer", "CEACAM5") 
-plot_areg <-   boxplot_ukb("Colorectal_cancer", "AREG")
-#plot_areg_lung <-   boxplot_ukb("Lung_cancer", "AREG")
-plot_crc <- boxplot_ukb("Colorectal_cancer", "C1QA")
-#plot_areg_lung <-   boxplot_ukb("Lung_cancer", "AREG")
-#boxplot_ukb("Prostate_cancer", "KLK4")
-plot_ovary <- boxplot_ukb("Ovary_cancer", "WFDC2")
-
-boxplot_ukb("Prostate_cancer", "AREG")
-
-plot_ceacam5 | plot_nefl | plot_crc | plot_areg | plot_ovary
-ggsave(savepath_results("Publication-figures", "examples_ukp.pdf"), h = 3, w = 14)
-
-protein <- 
-cancer <- 
-
-protein <- "CXCL8"
-cancer <- "Colorectal_cancer"
-
-protein <- "VTCN1"
-cancer <- "Ovary_cancer"
-
-
-
-ggsave(savepath("TFRC.png"), h = 4, w = 5)
-ggsave(savepath("MDK_mockup.png"), h = 3, w = 4)
+ggsave(savepath_results("Manuscript-figures", "UKB_ML.pdf"),
+       h = 4,
+       w = 9) 
 ```
 
 
-## Plot two examples
+## Save performance
 
 ```{r}
-protein <- "AGR2"
+all_pred |>
+  distinct(Cancer, Group, AUC, CI_lower, CI_upper) |>
+  write_csv(savepath_data("Supplementary-files", "UKB_ML_performance.csv"))
+```
 
-hdba_data |> 
-  left_join(hdba_meta, by = "DAid") |>
-  filter(Assay == protein,
-         Disease %in% c("Ovarian cancer", 
-                        "Breast cancer", 
-                        "Prostate cancer",
-                        "Lung cancer",
-                        "Colorectal cancer")) |> 
-  ggplot(aes(Disease, NPX, color = Disease, fill = Disease)) +
-  geom_quasirandom() +
-  geom_boxplot(outlier.color = NA, alpha = 0.4, color = "black") +
-  scale_color_manual(values = (pal_ucan_2)) +
-  scale_fill_manual(values = (pal_ucan_2)) +
+# Plot two examples
+
+Generate boxplots for two example proteins across diagnosis groups.
+
+```{r}
+p_ceacam <-
+  plot_boxplot_ukb("Lung_cancer", "CEACAM5")  +
   theme_hpa(axis_x = F)
 
-ggsave(savepath("AGR2_P1.png"), h = 4, w = 5)
-ggsave(savepath("CEACAM5_P1.png"), h = 4, w = 5)
+p_wfdc2 <-
+  plot_boxplot_ukb("Ovary_cancer", "WFDC2") +
+  xlab("Time to diagnosis groups")
 
-ucan_data |> 
-  left_join(manifest, by = "DAid") |>
-  filter(Assay == protein,
-         Diagnose %in% names(pal_ucan)) |> 
-  ggplot(aes(Diagnose, NPX, color = Diagnose, fill = Diagnose)) +
-  geom_quasirandom() +
-  geom_boxplot(outlier.color = NA, alpha = 0.4, color = "black") +
-  scale_color_manual(values = (pal_ucan)) +
-  scale_fill_manual(values = (pal_ucan)) +
-  theme_hpa(axis_x = F)
+p_ceacam / p_wfdc2
 
-ggsave(savepath("CEACAM5_P2.png"), h = 4, w = 5)
-ggsave(savepath("AGR2_P2.png"), h = 4, w = 5)
-
-
-
-
-
-protein <- "PAEP"
-
-hdba_data |> 
-  left_join(hdba_meta, by = "DAid") |>
-  filter(Assay == protein,
-         Disease %in% c("Ovarian cancer", 
-                        "Breast cancer", 
-                        "Prostate cancer",
-                        "Lung cancer",
-                        "Colorectal cancer")) |> 
-  ggplot(aes(Disease, NPX, color = Disease, fill = Disease)) +
-  geom_quasirandom(show.legend = F) +
-  geom_boxplot(outlier.color = NA, alpha = 0.4, color = "black", show.legend = F) +
-  scale_color_manual(values = (pal_ucan_2)) +
-  scale_fill_manual(values = (pal_ucan_2)) +
-  theme_hpa() +
-  theme(axis.ticks = element_blank(),
-        axis.text = element_blank()) +
-  xlab("Cancers") +
-  ylab("Protein expression")
-
-ggsave(savepath("PAEP_P1.png"), h = 4, w = 4)
-
-ucan_data |> 
-  left_join(manifest, by = "DAid") |>
-  filter(Assay == protein,
-         Diagnose %in% names(pal_ucan)) |> 
-  ggplot(aes(Diagnose, NPX, color = Diagnose, fill = Diagnose)) +
-  geom_quasirandom(show.legend = F) +
-  geom_boxplot(outlier.color = NA, alpha = 0.4, color = "black", show.legend = F) +
-  scale_color_manual(values = (pal_ucan)) +
-  scale_fill_manual(values = (pal_ucan)) +
-  theme_hpa() +
-  theme(axis.ticks = element_blank(),
-        axis.text = element_blank()) +
-  xlab("Cancers") +
-  ylab("Protein expression")
-
-ggsave(savepath("PAEP_P2.png"), h = 4, w = 4)
-
+ggsave(
+  savepath_results("Manuscript-figures", "UKB_examples.pdf"),
+  h = 7,
+  w = 4
+)
 ```
