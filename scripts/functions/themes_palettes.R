@@ -1,7 +1,6 @@
 
-library(RColorBrewer)
-
 # Palettes
+library(RColorBrewer)
 
 ## Wellness - detectability
 pal_detectability <- c("None" = "#DF7176", 
@@ -95,11 +94,26 @@ pal_platform <- c("Olink Explore 1463" = "#F4A261",
 
 ## UKB
 pal_ukb <- 
+  c("Healthy" = "grey",
+    "> 7 years before" = "#4D7654", 
+    "5-7 years before" = "#748B5F", 
+    "3-5 years before" = "#E3D6A0", 
+    "1-3 years before" = "#C78240", 
+    "1 year before/after" = "#A42F2E", 
+    "1-3 years after" = "#802020", 
+    "> 3 years after" = "#510402")
+
+pal_ukb_2 <- 
   c("> 5 years before" = "#4D7654", 
     "3-5 years before" = "#E3D6A0", 
     "1-3 years before" = "#C78240", 
     "1 year before/after" = "#A42F2E", 
     "> 1 year after" = "#510402")
+
+pal_ukb_3 <- 
+  c("> 3 years before" = "#4D7654", 
+    "Up to 3 years before" = "#E3D6A0", 
+    "After diagnosis" = "#A42F2E")
 
 # Levels
 class_order <- c("Healthy", "Cardiovascular","Metabolic","Cancer","Psychiatric","Autoimmune","Infection","Pediatric")
