@@ -1,5 +1,5 @@
 ---
-title: "02_disease_profiling"
+title: "04_disease_profiling_overview"
 output: html_document
 autor: "María Bueno Álvez"
 date: "2024-12-13"
@@ -16,228 +16,68 @@ source("scripts/functions/functions_visualization.R")
 source("scripts/functions/themes_palettes.R")
 
 # Read in data
-data_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_data_phase1.tsv")
-meta_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_meta_phase1.tsv")
+data_disease <-
+  read_tsv(
+    "../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_data_phase1.tsv"
+  )
+meta_disease <-
+  read_tsv(
+    "../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_meta_phase1.tsv"
+  )
 ```
 
 ## Disease order
 
 ```{r}
 disease_class_order <-
-  meta_disease |> 
-  distinct(Class, Disease) |> 
-  mutate(Class = factor(Class, levels = class_order)) |> 
-  arrange(Class, Disease) |> 
+  meta_disease |>
+  distinct(Class, Disease) |>
+  mutate(Class = factor(Class, levels = class_order)) |>
+  arrange(Class, Disease) |>
   pull(Disease)
 
-diseases <- 
-  meta_disease |> 
-  filter(Class != "Healthy") |> 
-  distinct(Disease) |> 
-  mutate(Disease = factor(Disease, levels = disease_class_order)) |> 
-  arrange(Disease) |> 
+diseases <-
+  meta_disease |>
+  filter(Class != "Healthy") |>
+  distinct(Disease) |>
+  mutate(Disease = factor(Disease, levels = disease_class_order)) |>
+  arrange(Disease) |>
   pull()
 
-classes <- 
-  meta_disease |> 
-  filter(Class != "Healthy") |> 
-  distinct(Class) |> 
+classes <-
+  meta_disease |>
+  filter(Class != "Healthy") |>
+  distinct(Class) |>
   pull()
 ```
 
-## Disease file
+# Export data summaries
+
+Extract and export processed data summaries for supplementary files.
+
+## Proteomics data
 
 ```{r}
-data_summarised <- 
-  data_disease |> 
-  left_join(meta_disease |> 
-              select(DAid, Disease), by = "DAid") |> 
-  group_by(Disease, Assay, OlinkID) |> 
+data_summarised <-
+  data_disease |>
+  left_join(meta_disease |>
+              select(DAid, Disease), by = "DAid") |>
+  group_by(Disease, Assay, OlinkID) |>
   # Generate summaries
-  summarise(mean = mean(NPX),
-            median = median (NPX),
-            Q1 = quantile(NPX, .25),
-            Q3 = quantile(NPX, .75)) |> 
+  summarise(
+    mean = mean(NPX),
+    median = median (NPX),
+    Q1 = quantile(NPX, .25),
+    Q3 = quantile(NPX, .75)
+  ) |>
   # Round to two decimals
   mutate(across(c(mean, median, Q1, Q3), ~ round(.x, 2)),
-         Disease = factor(Disease, levels = disease_class_order)) |> 
-  arrange(Disease, Assay) 
+         Disease = factor(Disease, levels = disease_class_order)) |>
+  arrange(Disease, Assay)
 
-data_summarised |> 
-  filter(Assay == "FGF21") |> 
-  ggplot(aes(Disease, mean)) +
-  geom_point() +
-  geom_point(aes(y = median), color = "red") +
-  geom_point(aes(y = Q1), color = "grey") +
-  geom_point(aes(y = Q3), color = "grey") +
-  theme_hpa(angled = T)
-
-write_excel_csv(data_summarised, savepath_data("Supplementary-files", "Data_S12.csv"))
- ```
-
-
-# Disease overview
-
-## Barplot
-
-```{r}
-meta_disease |> 
-  count(Disease, Class) |> 
-  mutate(Disease = factor(Disease, levels = rev(disease_class_order))) |> 
-  ggplot(aes(Disease, n, fill = Class)) +
-  geom_col(show.legend = F) +
-  coord_flip() + 
-  scale_fill_manual(values = pal_class) +
-  theme_hpa() +
-  xlab("") +
-  ylab("Number of samples")
-
-ggsave(savepath_results("Manuscript-figures", "Fig_cohort_overview.pdf"), h = 9, w = 8)
-
+write_excel_csv(data_summarised,
+                savepath_data("Supplementary-files", "Data_S12.csv"))
 ```
-
-## Semicircle number of samples
-
-```{r}
-data <- 
-  data_disease |>
-  left_join(meta_disease, by = "DAid") |> 
-  filter(DAid %in% meta_disease$DAid) |> 
-  group_by(Disease, Class) |> 
-  summarise(n = n()) |> 
-  ungroup() |> 
-  mutate(fraction = n / sum(n),
-         Disease = factor(Disease, levels = disease_class_order)) |> 
-  arrange(Disease)
-
-
-data$ymax = cumsum(data$fraction)
-data$ymin = c(0, head(data$ymax, n=-1))
- 
-data |> 
-  ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3.5, fill=Class)) +
-  geom_rect(show.legend = F) +
-  coord_polar(theta = "y") +
-  ylim(c(0,2)) +
-  xlim(c(2, 4)) +
-  scale_fill_manual(values = pal_class) +
-  theme_void()
-
-ggsave(savepath_results("Manuscript-figures", "n_sample_overview.pdf"), h = 5, w = 5)
-```
-
-## Age, Sex, BMI distirbution
-
-```{r}
-sex_plot <- 
-  meta_disease |> 
-  group_by(Class, Disease, Sex) |> 
-  summarize(n = n_distinct(DAid)) |>
-  ungroup() |> 
-  group_by(Disease) |> 
-  mutate(total_n = sum(n)) |> 
-  mutate(Disease = factor(Disease, levels = (disease_class_order))) |> 
-  ggplot(aes(Disease, n, fill = Sex)) +
-  geom_col() +
-  geom_text(aes(label = total_n, y = total_n + 60)) + 
-  scale_fill_manual(values = pal_sex) +
-  theme_hpa(angled = T, axis_y = T) +
-  coord_flip() +
-  theme(legend.position = "top") +
-  xlab("") +
-  theme(axis.ticks.y = element_blank(),
-        axis.line.y = element_blank())
-
-age_plot <- 
-  meta_disease |> 
-  mutate(Disease = factor(Disease, levels = (disease_class_order))) |> 
-  ggplot(aes(x = Age, y = Disease,  color = Class, fill = Class, group = Disease)) +
-  geom_density_ridges(alpha = 0.5, quantile_lines = TRUE, quantiles = 2, show.legend = F) +
-  scale_fill_manual(values = pal_class) +
-  scale_color_manual(values = pal_class) +
-  theme_hpa(angled = T, axis_y = F) 
-
-bmi_plot <- 
-  meta_disease |> 
-  mutate(BMI = ifelse(BMI == 0, NA, BMI)) |>
-  mutate(Disease = factor(Disease, levels = (disease_class_order))) |> 
-  ggplot(aes(x = BMI, y = Disease,  color = Class, fill = Class, group = Disease)) +
-  geom_density_ridges(alpha = 0.5, quantile_lines = TRUE, quantiles = 2, show.legend = F) +
-  scale_fill_manual(values = pal_class) +
-  scale_color_manual(values = pal_class) +
-  theme_hpa(angled = T, axis_y = F) 
-
-sex_plot | age_plot | bmi_plot
-ggsave(savepath_results("Manuscript-figures", "S_Fig_cohort_overview_ridges.pdf"), h = 14, w = 12)
-```
-
-## Sample UMAP 
-
-```{r}
-umap_disease <- do_umap(data_disease,
-                        wide = F,
-                        impute = T) 
-
-disease_centers <- 
-  umap_disease |> 
-  left_join(meta_disease, by = c("Sample" = "DAid")) |> 
-  group_by(Disease, Class) |> 
-  summarise(UMAP1 = median(UMAP1),
-            UMAP2 = median(UMAP2)) 
-
-umap_disease |>
-  left_join(meta_disease, by = c("Sample" = "DAid")) |> 
-  ggplot(aes(UMAP2, UMAP1, color = Class)) +
-  geom_point(alpha = 0.5, show.legend = F) +
-  geom_text(data = disease_centers, aes(label = Disease), show.legend = F) +
-  scale_color_manual(values = pal_class) +
-  theme_hpa()
-
-ggsave(savepath_results("Manuscript-figures", "Fig4_UMAP.pdf"), h = 8, w = 6)
-```
-
-
-## Disease correlations
-
-```{r}
-cor_disease <- 
-  data_disease |> 
-  left_join(meta_disease |> 
-              select(DAid, Disease), by = "DAid") |>
-  group_by(Disease, Assay) |> 
-  summarise(NPX = mean(NPX)) |>
-  pivot_wider(names_from = "Assay", values_from = "NPX") |> 
-  column_to_rownames("Disease") |>
-  scale() |> 
-  t() |> 
-  cor(use = "complete.obs", method = "spearman")
-
-annotation <- 
-  meta_disease |> 
-  distinct(Disease, Class) |> 
-  column_to_rownames("Disease")
-
-# Mask the upper triangle
-ord = rownames(cor_disease)
-hc = hclust(as.dist(1 - cor_disease))
-cor_disease = cor_disease[hc$order, hc$order]
-cor_disease[upper.tri(cor_disease)] = NA
-cor_disease = cor_disease[ord, ord]
-
-cor_disease |> 
-  pheatmap(clustering_method = "ward.D2",
-           color = pal_cor,
-           cluster_col = hc, 
-           cluster_row = hc,
-           annotation_col = annotation,
-           annotation_row = annotation,
-           annotation_colors = list("Class" = pal_class),
-           na_col = "white") |> 
-  as.ggplot()
-
-ggsave(savepath_results("Manuscript-figures", "Fig1_correlation_diseases_scaled.pdf"), h = 12, w = 15)
-```
-
 
 ## Cohort info
 
@@ -259,96 +99,342 @@ cohort_info <-
   
 write_excel_csv(cohort_info, savepath_data("Supplementary-files", "Data_S13.csv"))
 ```
- 
-# Case-control
+
+# Disease overview
+
+Generate disease-specific summaries to provide an overview of cohort composition and sample distribution.
+
+## Barplot
+
+```{r}
+meta_disease |>
+  count(Disease, Class) |>
+  mutate(Disease = factor(Disease, levels = rev(disease_class_order))) |>
+  ggplot(aes(Disease, n, fill = Class)) +
+  geom_col(show.legend = F) +
+  coord_flip() +
+  scale_fill_manual(values = pal_class) +
+  theme_hpa() +
+  xlab("") +
+  ylab("Number of samples")
+
+ggsave(
+  savepath_results("Manuscript-figures", "Fig_cohort_overview.pdf"),
+  h = 9,
+  w = 8
+)
+```
+
+## Semicircle number of samples
+
+```{r}
+data <-
+  data_disease |>
+  left_join(meta_disease, by = "DAid") |>
+  filter(DAid %in% meta_disease$DAid) |>
+  group_by(Disease, Class) |>
+  summarise(n = n()) |>
+  ungroup() |>
+  mutate(
+    fraction = n / sum(n),
+    Disease = factor(Disease, levels = disease_class_order)
+  ) |>
+  arrange(Disease)
+
+
+data$ymax = cumsum(data$fraction)
+data$ymin = c(0, head(data$ymax, n = -1))
+
+data |>
+  ggplot(aes(
+    ymax = ymax,
+    ymin = ymin,
+    xmax = 4,
+    xmin = 3.5,
+    fill = Class
+  )) +
+  geom_rect(show.legend = F) +
+  coord_polar(theta = "y") +
+  ylim(c(0, 2)) +
+  xlim(c(2, 4)) +
+  scale_fill_manual(values = pal_class) +
+  theme_void()
+
+ggsave(savepath_results("Manuscript-figures", "n_sample_overview.pdf"), h = 5, w = 5)
+```
+
+## Age, Sex, BMI distirbution
+
+```{r}
+sex_plot <-
+  meta_disease |>
+  group_by(Class, Disease, Sex) |>
+  summarize(n = n_distinct(DAid)) |>
+  ungroup() |>
+  group_by(Disease) |>
+  mutate(total_n = sum(n)) |>
+  mutate(Disease = factor(Disease, levels = (disease_class_order))) |>
+  ggplot(aes(Disease, n, fill = Sex)) +
+  geom_col() +
+  geom_text(aes(label = total_n, y = total_n + 60)) +
+  scale_fill_manual(values = pal_sex) +
+  theme_hpa(angled = T, axis_y = T) +
+  coord_flip() +
+  theme(legend.position = "top") +
+  xlab("") +
+  theme(axis.ticks.y = element_blank(),
+        axis.line.y = element_blank())
+
+age_plot <-
+  meta_disease |>
+  mutate(Disease = factor(Disease, levels = (disease_class_order))) |>
+  ggplot(aes(
+    x = Age,
+    y = Disease,
+    color = Class,
+    fill = Class,
+    group = Disease
+  )) +
+  geom_density_ridges(
+    alpha = 0.5,
+    quantile_lines = TRUE,
+    quantiles = 2,
+    show.legend = F
+  ) +
+  scale_fill_manual(values = pal_class) +
+  scale_color_manual(values = pal_class) +
+  theme_hpa(angled = T, axis_y = F)
+
+bmi_plot <-
+  meta_disease |>
+  mutate(BMI = ifelse(BMI == 0, NA, BMI)) |>
+  mutate(Disease = factor(Disease, levels = (disease_class_order))) |>
+  ggplot(aes(
+    x = BMI,
+    y = Disease,
+    color = Class,
+    fill = Class,
+    group = Disease
+  )) +
+  geom_density_ridges(
+    alpha = 0.5,
+    quantile_lines = TRUE,
+    quantiles = 2,
+    show.legend = F
+  ) +
+  scale_fill_manual(values = pal_class) +
+  scale_color_manual(values = pal_class) +
+  theme_hpa(angled = T, axis_y = F)
+
+sex_plot | age_plot | bmi_plot
+ggsave(
+  savepath_results("Manuscript-figures", "S_Fig_cohort_overview_ridges.pdf"),
+  h = 14,
+  w = 12
+)
+```
+
+## Sample UMAP 
+
+```{r}
+umap_disease <- do_umap(data_disease,
+                        wide = F,
+                        impute = T)
+
+disease_centers <-
+  umap_disease |>
+  left_join(meta_disease, by = c("Sample" = "DAid")) |>
+  group_by(Disease, Class) |>
+  summarise(UMAP1 = median(UMAP1),
+            UMAP2 = median(UMAP2))
+
+umap_disease |>
+  left_join(meta_disease, by = c("Sample" = "DAid")) |>
+  ggplot(aes(UMAP2, UMAP1, color = Class)) +
+  geom_point(alpha = 0.5, show.legend = F) +
+  geom_text(data = disease_centers, aes(label = Disease), show.legend = F) +
+  scale_color_manual(values = pal_class) +
+  theme_hpa()
+
+ggsave(
+  savepath_results("Manuscript-figures", "Fig4_UMAP.pdf"),
+  h = 8,
+  w = 6
+)
+```
+
+
+## Disease correlations
+
+```{r}
+cor_disease <-
+  data_disease |>
+  left_join(meta_disease |>
+              select(DAid, Disease), by = "DAid") |>
+  group_by(Disease, Assay) |>
+  summarise(NPX = mean(NPX)) |>
+  pivot_wider(names_from = "Assay", values_from = "NPX") |>
+  column_to_rownames("Disease") |>
+  scale() |>
+  t() |>
+  cor(use = "complete.obs", method = "spearman")
+
+annotation <-
+  meta_disease |>
+  distinct(Disease, Class) |>
+  column_to_rownames("Disease")
+
+# Mask the upper triangle
+ord = rownames(cor_disease)
+hc = hclust(as.dist(1 - cor_disease))
+cor_disease = cor_disease[hc$order, hc$order]
+cor_disease[upper.tri(cor_disease)] = NA
+cor_disease = cor_disease[ord, ord]
+
+cor_disease |>
+  pheatmap(
+    clustering_method = "ward.D2",
+    color = pal_cor,
+    cluster_col = hc,
+    cluster_row = hc,
+    annotation_col = annotation,
+    annotation_row = annotation,
+    annotation_colors = list("Class" = pal_class),
+    na_col = "white"
+  ) |>
+  as.ggplot()
+
+ggsave(
+  savepath_results(
+    "Manuscript-figures",
+    "Fig1_correlation_diseases_scaled.pdf"
+  ),
+  h = 12,
+  w = 15
+)
+```
+
+# Case-control examples
+
+Extract representative case–control comparisons to illustrate the power of a pan-disease approach.
+
+## Prepare data
+
+```{r}
+ml_data <- 
+  data_disease |>
+  left_join(meta_disease |> 
+              select(DAid, Disease, Class), by = "DAid") |> 
+  select(DAid, Disease, Assay, NPX) |> 
+  pivot_wider(names_from = Assay,
+              values_from = NPX) 
+
+set.seed(213)
+disease_split <-
+  ml_data |> 
+  initial_split(prop = 0.7,  strata = Disease)
+
+disease_train <- training(disease_split)
+disease_test <- testing(disease_split)
+```
 
 ## FGF21
 
-
 ```{r}
+# Define current protein and classes to classify against
+protein <- "FGF21"
 
-protein = "FGF21"
-disease = "Pancreatic cancer"
+disease <-  "Pancreatic cancer"
 
-selected_bacterial_infections <- 
-  c("E.coli pyelonephritis", 
-    "Pneumococcal pneumonia", 
-    "Staphylococcus aureus bacteremia", 
-    "Streptococcal soft tissue infection")
- res_lr_classes <-
-   
-   current_meta <- 
-   resource_meta |> 
-   mutate(Disease_grouped = case_when(Disease == "Pancreatic cancer" ~"Pancreatic cancer", 
-                              Disease %in%  selected_bacterial_infections ~"Selected bacterial infections ", 
-                              Disease == "Healthy" ~ "Healthy",
-                              T ~ "Other"
-                              ))
- 
- current_classes <- 
-   current_meta |> 
-   distinct(Disease_grouped) |> 
-   filter(Disease_grouped != disease) |> 
-   pull()
- 
- current_res <- 
-   map(current_classes, function(class) {
-     
-   control_diseases <-
-     current_meta |>
-     filter(Disease_grouped == class) |>
-     distinct(Disease) |>
-     filter(Disease != disease) |>
-     pull()
-   
-   do_log_reg (
-     protein = protein,
-     disease_case = disease,
-     disease_control = control_diseases,
-     disease_train = disease_train,
-     disease_test = disease_test
-   )
-   
- }) |>
-   set_names(current_classes)
- 
-  
-  roc_class_df <-
-    map_df(current_classes, function(class) {
-      res <-  current_res[[class]]
-      
-      res$roc_curve |>
-        mutate(AUC = res$AUC) |>
-        mutate(
-          Class = class,
-          Disease = disease,
-          Protein = protein,
-          Combo = paste(disease, protein, sep = "_")
-        )
-    })
-  
+selected_bacterial_infections <-
+  c(
+    "E.coli pyelonephritis",
+    "Pneumococcal pneumonia",
+    "Staphylococcus aureus bacteremia",
+    "Streptococcal soft tissue infection"
+  )
+
+res_lr_classes <-
+  current_meta <-
+  meta_disease |>
+  mutate(
+    Disease_grouped = case_when(
+      Disease == "Pancreatic cancer" ~ "Pancreatic cancer",
+      Disease %in%  selected_bacterial_infections ~
+        "Selected bacterial infections ",
+      Disease == "Healthy" ~ "Healthy",
+      T ~ "Other"
+    )
+  )
+
+current_classes <-
+  current_meta |>
+  distinct(Disease_grouped) |>
+  filter(Disease_grouped != disease) |>
+  pull()
+
+# Run logistic regression against all classes
+current_res <-
+  map(current_classes, function(class) {
+    control_diseases <-
+      current_meta |>
+      filter(Disease_grouped == class) |>
+      distinct(Disease) |>
+      filter(Disease != disease) |>
+      pull()
+    
+    do_log_reg (
+      protein = protein,
+      disease_case = disease,
+      disease_control = control_diseases,
+      disease_train = disease_train,
+      disease_test = disease_test
+    )
+    
+  }) |>
+  set_names(current_classes)
+
+# Extract ROC results
+roc_class_df <-
+  map_df(current_classes, function(class) {
+    res <-  current_res[[class]]
+    
+    res$roc_curve |>
+      mutate(AUC = res$AUC) |>
+      mutate(
+        Class = class,
+        Disease = disease,
+        Protein = protein,
+        Combo = paste(disease, protein, sep = "_")
+      )
+  })
+
+# Plot ROC curves
+tiles <-
+  tibble(
+    specificity = c(0.2, 0.2, 0.2),
+    sensitivity = c(0.4, 0.3, 0.2),
+    Class = current_classes
+  )  |>
+  left_join(roc_class_df |>
+              distinct(Combo, Class, AUC), by = "Class") |>
+  mutate(AUC = round(AUC, 2)) |>
+  arrange(-AUC)
+
+current_pal <-
+  c(
+    "Other" = "darkred",
+    "Selected bacterial infections " = pal_class[["Infection"]],
+    "Healthy" = pal_class["Healthy"]
+  )
 
 tiles <-
-  tibble(specificity = c(0.2,0.2,0.2),
-         sensitivity = c(0.4,0.3,0.2),
-         Class = current_classes
-         )  |> 
-  left_join(roc_class_df |> 
-              distinct(Combo, Class, AUC), by = "Class") |> 
-  mutate(AUC = round(AUC, 2)) |> 
-  arrange(-AUC) 
-
-current_pal <- 
-  c("Other" = "darkred",
-                                                                                                   "Selected bacterial infections " = pal_class[["Infection"]],
-                                                                                                   "Healthy" = pal_class["Healthy"])
-tiles <- 
-  tiles |> 
+  tiles |>
   mutate(Class = factor(Class, levels = tiles$Class))
-              
-plot_fgf21 <- 
-  roc_class_df |> 
-   mutate(Class = factor(Class, levels = tiles$Class)) |> 
+
+plot_fgf21 <-
+  roc_class_df |>
+  mutate(Class = factor(Class, levels = tiles$Class)) |>
   ggplot(aes(
     x = 1 - specificity,
     y = sensitivity,
@@ -378,7 +464,7 @@ plot_fgf21 <-
     color = "black",
     show.legend = F
   ) +
-   geom_text(
+  geom_text(
     data = tiles,
     aes(label = Class,
         x = 1 - specificity - 0.2),
@@ -392,104 +478,111 @@ plot_fgf21 <-
     y = 0.5,
     size = 3,
     inherit.aes = F
-  ) +  # Fixed the warning
-  scale_color_manual(values =current_pal) +  
+  ) +  
+  scale_color_manual(values = current_pal) +
   scale_fill_manual(values = current_pal) +
   scale_x_continuous(breaks = c(0, 1)) +
   scale_y_continuous(breaks = c(0, 1)) +
   theme_hpa() +
   coord_fixed()
-
-plot_fgf21  
 ```
 
 ## GSTA3
 
 ```{r}
-protein = "GSTA3"
-disease = "Hepatocellular cancer"
+# Define current protein and classes to classify against
+protein <- "GSTA3"
 
-selected_liver <- 
-  c("Alcohol-related liver disease", 
-    "Chronic liver disease", 
-    "MASLD", 
+disease <- "Hepatocellular cancer"
+
+selected_liver <-
+  c(
+    "Alcohol-related liver disease",
+    "Chronic liver disease",
+    "MASLD",
     "Viral hepatitis related cirrhosis"
+  )
+res_lr_classes <-
+  
+  current_meta <-
+  meta_disease |>
+  mutate(
+    Disease_grouped = case_when(
+      Disease == "Hepatocellular cancer" ~ "Hepatocellular cancer",
+      Disease %in%  selected_liver ~ "Liver diseases",
+      Disease == "Healthy" ~ "Healthy",
+      T ~ "Other"
     )
- res_lr_classes <-
-   
-   current_meta <- 
-   resource_meta |> 
-   mutate(Disease_grouped = case_when(Disease == "Hepatocellular cancer" ~"Hepatocellular cancer", 
-                              Disease %in%  selected_liver ~ "Liver diseases", 
-                              Disease == "Healthy" ~ "Healthy",
-                              T ~ "Other"
-                              ))
- 
- current_classes <- 
-   current_meta |> 
-   distinct(Disease_grouped) |> 
-   filter(Disease_grouped != disease) |> 
-   pull()
- 
- current_res <- 
-   map(current_classes, function(class) {
-     
-   control_diseases <-
-     current_meta |>
-     filter(Disease_grouped == class) |>
-     distinct(Disease) |>
-     filter(Disease != disease) |>
-     pull()
-   
-   do_log_reg (
-     protein = protein,
-     disease_case = disease,
-     disease_control = control_diseases,
-     disease_train = disease_train,
-     disease_test = disease_test
-   )
-   
- }) |>
-   set_names(current_classes)
- 
-  
-  roc_class_df <-
-    map_df(current_classes, function(class) {
-      res <-  current_res[[class]]
-      
-      res$roc_curve |>
-        mutate(AUC = res$AUC) |>
-        mutate(
-          Class = class,
-          Disease = disease,
-          Protein = protein,
-          Combo = paste(disease, protein, sep = "_")
-        )
-    })
-  
+  )
 
+current_classes <-
+  current_meta |>
+  distinct(Disease_grouped) |>
+  filter(Disease_grouped != disease) |>
+  pull()
+
+# Run logistic regression against all classes
+current_res <-
+  map(current_classes, function(class) {
+    control_diseases <-
+      current_meta |>
+      filter(Disease_grouped == class) |>
+      distinct(Disease) |>
+      filter(Disease != disease) |>
+      pull()
+    
+    do_log_reg (
+      protein = protein,
+      disease_case = disease,
+      disease_control = control_diseases,
+      disease_train = disease_train,
+      disease_test = disease_test
+    )
+    
+  }) |>
+  set_names(current_classes)
+
+# Extract ROC results
+roc_class_df <-
+  map_df(current_classes, function(class) {
+    res <-  current_res[[class]]
+    
+    res$roc_curve |>
+      mutate(AUC = res$AUC) |>
+      mutate(
+        Class = class,
+        Disease = disease,
+        Protein = protein,
+        Combo = paste(disease, protein, sep = "_")
+      )
+  })
+
+# Plot ROC curves
 tiles <-
-  tibble(specificity = c(0.2,0.2,0.2),
-         sensitivity = c(0.4,0.3,0.2),
-         Class = current_classes
-         )  |> 
-  left_join(roc_class_df |> 
-              distinct(Combo, Class, AUC), by = "Class") |> 
-  mutate(AUC = round(AUC, 2)) |> 
-  arrange(-AUC) 
+  tibble(
+    specificity = c(0.2, 0.2, 0.2),
+    sensitivity = c(0.4, 0.3, 0.2),
+    Class = current_classes
+  )  |>
+  left_join(roc_class_df |>
+              distinct(Combo, Class, AUC), by = "Class") |>
+  mutate(AUC = round(AUC, 2)) |>
+  arrange(-AUC)
 
 
-current_pal <- 
-  c("Other" = "darkred",
+current_pal <-
+  c(
+    "Other" = "darkred",
     "Liver diseases" = "#E5C494",
-    "Healthy" = pal_class[["Healthy"]])
-tiles <- 
-  tiles |> 
+    "Healthy" = pal_class[["Healthy"]]
+  )
+tiles <-
+  tiles |>
   mutate(Class = factor(Class, levels = tiles$Class))
-              
-plot_gsta3 <- 
-  roc_class_df |> 
-   mutate(Class = factor(Class, levels = tiles$Class)) |> 
+
+plot_gsta3 <-
+  roc_class_df |>
+  mutate(Class = factor(Class, levels = tiles$Class)) |>
   ggplot(aes(
     x = 1 - specificity,
     y = sensitivity,
@@ -519,7 +612,7 @@ plot_gsta3 <-
     color = "black",
     show.legend = F
   ) +
-   geom_text(
+  geom_text(
     data = tiles,
     aes(label = Class,
         x = 1 - specificity - 0.2),
@@ -534,98 +627,103 @@ plot_gsta3 <-
     size = 3,
     inherit.aes = F
   ) +  # Fixed the warning
-  scale_color_manual(values = current_pal) +  
+  scale_color_manual(values = current_pal) +
   scale_fill_manual(values =  current_pal) +
   scale_x_continuous(breaks = c(0, 1)) +
   scale_y_continuous(breaks = c(0, 1)) +
   theme_hpa() +
   coord_fixed()
-
-plot_gsta3 
 ```
 
 
 ## CES3
 
 ```{r}
-protein = "CES3"
-diseases = c("Rheumatoid arthritis",
+# Define current protein and classes to classify against
+protein <- "CES3"
+
+diseases <-  c("Rheumatoid arthritis",
              "Systemic lupus erythematosus")
 
+current_meta <-
+  meta_disease |>
+  mutate(
+    Disease_grouped = case_when(
+      Disease %in% diseases ~ Disease,
+      Disease == "Dengue" ~ "Dengue",
+      Disease == "Healthy" ~ "Healthy",
+      T ~ "Other"
+    )
+  )
 
-  current_meta <- 
-   resource_meta |> 
-   mutate(Disease_grouped = case_when(Disease %in% diseases ~ Disease, 
-                              Disease == "Dengue" ~ "Dengue", 
-                              Disease == "Healthy" ~ "Healthy",
-                              T ~ "Other"
-                              ))
- 
- current_classes <- 
-   current_meta |> 
-   distinct(Disease_grouped) |> 
-   filter(!Disease_grouped %in% diseases) |> 
-   pull()
- 
- current_res <- 
-   map(current_classes, function(class) {
-     
-   control_diseases <-
-     current_meta |>
-     filter(Disease_grouped == class) |>
-     distinct(Disease) |>
-     filter(Disease != disease) |>
-     pull()
-   
-   do_log_reg (
-     protein = protein,
-     disease_case = diseases,
-     disease_control = control_diseases,
-     disease_train = disease_train,
-     disease_test = disease_test
-   )
-   
- }) |>
-   set_names(current_classes)
- 
-  
-  roc_class_df <-
-    map_df(current_classes, function(class) {
-      res <-  current_res[[class]]
-      
-      res$roc_curve |>
-        mutate(AUC = res$AUC) |>
-        mutate(
-          Class = class,
-          Disease = disease,
-          Protein = protein,
-          Combo = paste(disease, protein, sep = "_")
-        )
-    })
-  
+current_classes <-
+  current_meta |>
+  distinct(Disease_grouped) |>
+  filter(!Disease_grouped %in% diseases) |>
+  pull()
 
+# Run logistic regression against all classes
+current_res <-
+  map(current_classes, function(class) {
+    control_diseases <-
+      current_meta |>
+      filter(Disease_grouped == class) |>
+      distinct(Disease) |>
+      filter(Disease != disease) |>
+      pull()
+    
+    do_log_reg (
+      protein = protein,
+      disease_case = diseases,
+      disease_control = control_diseases,
+      disease_train = disease_train,
+      disease_test = disease_test
+    )
+    
+  }) |>
+  set_names(current_classes)
+
+# Extract ROC results
+roc_class_df <-
+  map_df(current_classes, function(class) {
+    res <-  current_res[[class]]
+    
+    res$roc_curve |>
+      mutate(AUC = res$AUC) |>
+      mutate(
+        Class = class,
+        Disease = disease,
+        Protein = protein,
+        Combo = paste(disease, protein, sep = "_")
+      )
+  })
+
+# Plot ROC curves
 tiles <-
-  tibble(specificity = c(0.2,0.2,0.2),
-         sensitivity = c(0.4,0.3,0.2),
-         Class = current_classes
-         )  |> 
-  left_join(roc_class_df |> 
-              distinct(Combo, Class, AUC), by = "Class") |> 
-  mutate(AUC = round(AUC, 2)) |> 
-  arrange(-AUC) 
+  tibble(
+    specificity = c(0.2, 0.2, 0.2),
+    sensitivity = c(0.4, 0.3, 0.2),
+    Class = current_classes
+  )  |>
+  left_join(roc_class_df |>
+              distinct(Combo, Class, AUC), by = "Class") |>
+  mutate(AUC = round(AUC, 2)) |>
+  arrange(-AUC)
 
 
-current_pal <- 
-  c("Other" = "darkred",
+current_pal <-
+  c(
+    "Other" = "darkred",
     "Dengue" = pal_class[["Infection"]],
-    "Healthy" = pal_class["Healthy"])
-tiles <- 
-  tiles |> 
+    "Healthy" = pal_class["Healthy"]
+  )
+tiles <-
+  tiles |>
   mutate(Class = factor(Class, levels = tiles$Class))
-              
-plot_ces3 <- 
-  roc_class_df |> 
-   mutate(Class = factor(Class, levels = tiles$Class)) |> 
+
+plot_ces3 <-
+  roc_class_df |>
+  mutate(Class = factor(Class, levels = tiles$Class)) |>
   ggplot(aes(
     x = 1 - specificity,
     y = sensitivity,
@@ -655,7 +753,7 @@ plot_ces3 <-
     color = "black",
     show.legend = F
   ) +
-   geom_text(
+  geom_text(
     data = tiles,
     aes(label = Class,
         x = 1 - specificity - 0.2),
@@ -670,201 +768,17 @@ plot_ces3 <-
     size = 3,
     inherit.aes = F
   ) +  # Fixed the warning
-  scale_color_manual(values =current_pal) +  
+  scale_color_manual(values = current_pal) +
   scale_fill_manual(values = current_pal) +
   scale_x_continuous(breaks = c(0, 1)) +
   scale_y_continuous(breaks = c(0, 1)) +
   theme_hpa() +
   coord_fixed()
-
-plot_ces3
 ```
 
 ## Combine 
 
 ```{r}
 plot_fgf21 / plot_ces3 / plot_gsta3
-ggsave(savepath( "auc_biomarkers.pdf"), h = 12, w = 3)
-```
-
-# Proteins in all diseases
-
-```{r}
-general_disease_markers <- 
-  combined_de |> 
-  filter(sig != "not significant", 
-         Control == "Healthy") |> 
-  count(Assay) |> 
-  arrange(-n) |> 
-  filter(n > 30)
-
-gene_universe <- 
-  resource_data |> 
-  distinct(Assay) |> 
-  pull()
-
-# Enrichment analyses
-
-input_ora <- tibble(gene = general_disease_markers$Assay,
-                    partition = "general_disease_markers")
-
-library(multidplyr)
-ora_res <- 
-  do_ORA(gene_associations = input_ora,
-       database = "GO_BP",
-       universe = gene_universe)
-
-# ukb data
-ukb_associations <- read_csv("data/UkbUnivariateDiseaseResults/UkbUnivariateDiseaseAssociations.csv")
-
-# Select proteins associated to all-cause mortality in UKB
-ukb_associations_mortality <- 
-  ukb_associations |> 
-  filter(phenotype == "All-cause mortality",
-         Assay %in% unique(resource_data$Assay),
-         adjusted_pval < 0.0005,
-         hazard_ratio > 1) 
-
-# Barplot
-combined_de |> 
-  filter(sig != "not significant", 
-         Control == "Healthy", 
-         Assay %in% general_disease_markers$Assay) |> 
-  distinct(Assay, Disease) |> 
-  left_join(resource_meta |> 
-              distinct(Disease, Class), by = "Disease") |> 
-  group_by(Assay) |> 
-  count(Class) |> 
-  mutate(Assay = factor(Assay, levels = general_disease_markers$Assay)) |> 
-  ggplot(aes(Assay, n, fill = Class)) +
-  geom_col() +
-  scale_fill_manual(values = pal_class) +
- # geom_text(data = general_disease_markers, aes(x = Assay, y = n, label = n), vjust = -0.5, inherit.aes = F, angle = 90) +
-  theme_hpa(angled = T) +
-  xlab("") +
-  ylab("Number of diseases")
-
-ggsave(savepath("general_disease_markers.pdf"),
-       height = 8,
-       width = 20)
-# Hihghlight the one with most cancer, immune, CV contribution?
-
-
-
-# Prepare data for the barplot
-barplot_data <- combined_de |> 
-  filter(sig != "not significant", 
-         Control == "Healthy", 
-         Assay %in% general_disease_markers$Assay) |> 
-  distinct(Assay, Disease) |> 
-  left_join(resource_meta |> 
-              distinct(Disease, Class), by = "Disease") |> 
-  group_by(Assay) |> 
-  count(Class) |> 
-  mutate(Assay = factor(Assay, levels = general_disease_markers$Assay))
-
-# Compute the top of the stacked bars for each assay
-barplot_totals <- 
-  barplot_data |> 
-  group_by(Assay) |> 
-  summarize(y_position = sum(n)) |> 
-  filter(Assay %in% ukb_associations_mortality$Assay)  # Filter for assays in ukb_associations_mortality
-
-# Plot with asterisks
-barplot_data |> 
-  ggplot(aes(Assay, n, fill = Class)) +
-  geom_col() +
-  geom_text(data = barplot_totals, aes(x = Assay, y = y_position + 1, label = "*"), 
-            inherit.aes = FALSE, size = 5, color = "black", vjust = 0) +  # Add asterisk slightly above the bar
-  scale_fill_manual(values = pal_class) +
-  theme_hpa(angled = TRUE) +
-  xlab("") +
-  ylab("Number of diseases")
-
-ggsave(savepath("general_disease_markers.pdf"),
-       height = 6,
-       width = 23)
-```
-
-# Proteins high for a class
-
-```{r}
-combined_de |> 
-  filter(Control == "Healthy",
-         sig != "not significant") |> 
-  left_join(resource_meta |> 
-              distinct(Disease, Class), by = "Disease") |> 
-  count(Class, Assay) |> 
-  arrange(-n) |> 
-  rename(n_diseases = n) |> 
-  group_by(Class) |> 
-  count(n_diseases) |> 
-  mutate(n_diseases = as.factor(n_diseases)) |>
-  ggplot(aes(n_diseases, n, fill = Class)) +
-  geom_col() +
-  #geom_histogram(color = "black") +
-  ylab("Number of proteins") +
-  xlab("Number of diseases") +
-  facet_grid(~Class, scales = "free_x", space = "free_x") +
-  scale_fill_manual(values = pal_class) +
-  theme_hpa()
-
-ggsave(savepath("proteins_per_class.png"), h = 3, w = 16)
-
-combined_de |> 
-  filter(Control == "Healthy",
-         sig != "not significant") |> 
-  left_join(resource_meta |> 
-              distinct(Disease, Class), by = "Disease") |> 
-  left_join(hpa, by = c("Assay" = "Gene")) |>
-  group_by(Class, Assay) |> 
-  count(`Secretome location`) |> 
-  arrange(-n) |> 
-  rename(n_diseases = n) |> 
-  group_by(Class, `Secretome location`) |> 
-  count(n_diseases) |> 
-  mutate(n_diseases = as.factor(n_diseases)) |>
-  ggplot(aes(n_diseases, n, fill = `Secretome location`)) +
-  geom_col() +
-  #geom_histogram(color = "black") +
-  ylab("Number of proteins") +
-  xlab("Number of cancers") +
-  facet_grid(~Class, scales = "free_x", space = "free_x") +
-  scale_fill_manual(values = pal_secreted) +
-  theme_hpa()
-
-
-
-ukb_associations <- read_csv("data/UkbUnivariateDiseaseResults/UkbUnivariateDiseaseAssociations.csv")
-
-mortality_proteins <- 
-  ukb_associations |> 
-  filter(Assay %in% unique(resource_data$Assay),
-         phenotype == "All-cause mortality") |> 
-  filter(adjusted_pval < 0.001)
-
-
-combined_de |> 
-  filter(Control == "Healthy",
-         sig != "not significant") |> 
-  left_join(resource_meta |> 
-              distinct(Disease, Class), by = "Disease") |> 
-  mutate(mortality = ifelse(Assay %in% mortality_proteins$Assay, "Mortality", "Non-mortality")) |>
-  count(Class, Assay, mortality) |> 
-  arrange(-n) |> 
-  rename(n_diseases = n) |> 
-  group_by(Class, mortality) |> 
-  count(n_diseases) |> 
-  mutate(n_diseases = as.factor(n_diseases)) |>
-  ggplot(aes(n_diseases, n, fill = mortality)) +
-  geom_col() +
-  #geom_histogram(color = "black") +
-  ylab("Number of proteins") +
-  xlab("Number of cancers") +
-  facet_grid(~Class, scales = "free_x", space = "free_x") +
-  #scale_fill_manual(values = pal_class) +
-  theme_hpa()
-
-ggsave(savepath("proteins_per_class.png"), h = 4, w = 16)
-
+ggsave(savepath("auc_biomarkers.pdf"), h = 12, w = 3)
 ```
