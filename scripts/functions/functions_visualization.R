@@ -16,6 +16,7 @@ library(ggridges)
 library(ggraph)
 library(tidygraph)
 library(ggupset)
+library(rrvgo)
 
 # Generate PCA
 do_pca <- function(data,
