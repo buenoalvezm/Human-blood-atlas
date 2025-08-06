@@ -179,6 +179,7 @@ ukb_wide[missing_3072] <- NA
 ```{r}
 predictions_ukb <-
   map_df(cancers, function(cancer) {
+    
     current_data <-
       ukb_wide |>
       mutate(Variable = case_when(
@@ -215,6 +216,15 @@ predictions_ukb <-
     new_predictions <-
       predict(current_model, new_data = current_data, type = "prob")
     
+    group_info <-
+      ukb_wide |>
+      filter(Disease == cancer) |>
+      left_join(ukb_dat |>
+                  select(DAid = eid, Group_2) |>
+                  mutate(DAid = as.character(DAid)),
+                by = "DAid") |>
+      select(DAid, Group_2)
+    
     new_predictions |>
       mutate(DAid = current_data$DAid) |>
       left_join(group_info) |>
@@ -235,16 +245,7 @@ all_pred <-
       predictions_ukb |>
       filter(Cancer == cancer)
     
-    group_info <-
-      ukb_wide |>
-      filter(Disease == cancer) |>
-      left_join(ukb_dat |>
-                  select(DAid = eid, Group_2) |>
-                  mutate(DAid = as.character(DAid)),
-                by = "DAid") |>
-      select(DAid, Group_2)
-    
-    
+
     map_df(as.character(unique(group_info$Group_2)), function(group) {
       new_predictions_ext <-
         new_predictions |>
