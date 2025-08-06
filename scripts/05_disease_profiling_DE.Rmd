@@ -1,5 +1,5 @@
 ---
-title: "02_disease_profiling"
+title: "05_disease_profiling_DE"
 output: html_document
 autor: "María Bueno Álvez"
 date: "2024-12-13"
@@ -16,52 +16,64 @@ source("scripts/functions/functions_visualization.R")
 source("scripts/functions/themes_palettes.R")
 
 # Read in data
-data_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_data_phase1.tsv")
-meta_disease <- read_tsv("../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_meta_phase1.tsv")
-ukb_associations <- read_csv("data/UkbUnivariateDiseaseResults/UkbUnivariateDiseaseAssociations.csv")
+data_disease <-
+  read_tsv(
+    "../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_data_phase1.tsv"
+  )
+meta_disease <-
+  read_tsv(
+    "../Human-disease-blood-atlas/data/final_data/HPA/v24_2/disease_meta_phase1.tsv"
+  )
+
+# Other data
+ukb_associations <-
+  read_csv("data/UkbUnivariateDiseaseResults/UkbUnivariateDiseaseAssociations.csv")
+gadd_2024 <- import_df("data/UKB/mortality_Gadd_2024.xlsx")
+you_2024 <- import_df("data/UKB/all_cause_mortality_You_2024.xlsx")
+olink_uniprot_mapping <-
+  read_tsv("../Human-disease-blood-atlas/data/olink_uniprot_mapping.tsv")
 ```
 
 ## Disease order
 
 ```{r}
 disease_class_order <-
-  meta_disease |> 
-  distinct(Class, Disease) |> 
-  mutate(Class = factor(Class, levels = class_order)) |> 
-  arrange(Class) |> 
+  meta_disease |>
+  distinct(Class, Disease) |>
+  mutate(Class = factor(Class, levels = class_order)) |>
+  arrange(Class) |>
   pull(Disease)
 
-diseases <- 
-  meta_disease |> 
-  filter(Class != "Healthy") |> 
-  distinct(Disease) |> 
-  mutate(Disease = factor(Disease, levels = disease_class_order)) |> 
-  arrange(Disease) |> 
+diseases <-
+  meta_disease |>
+  filter(Class != "Healthy") |>
+  distinct(Disease) |>
+  mutate(Disease = factor(Disease, levels = disease_class_order)) |>
+  arrange(Disease) |>
   pull()
 
-classes <- 
-  meta_disease |> 
-  filter(Class != "Healthy") |> 
-  distinct(Class) |> 
+classes <-
+  meta_disease |>
+  filter(Class != "Healthy") |>
+  distinct(Class) |>
   pull()
 ```
+# Perform DE
 
-
+Identify differentially abundant proteins across diseases using different sets of controls.
 
 ## Against healthy
 
 ```{r}
-de_healthy <- 
+de_healthy <-
   map_df(as.character(diseases), function(disease) {
-    
     message("Processing disease: ", disease)
     
-    disease_healthy_meta <- 
-      match_samples(
-        metadata = meta_disease, 
-        case = disease, 
-        control = "Healthy") |> 
-      mutate(Disease = ifelse(Disease == disease, disease, "Control")) |> 
+    disease_healthy_meta <-
+      match_samples(metadata = meta_disease,
+                    case = disease,
+                    control = "Healthy") |>
+      mutate(Disease = ifelse(Disease == disease, disease, "Control")) |>
       select(DAid = DAid, Disease, Sex, Age, BMI)
     
     disease_healthy_data <-
@@ -71,12 +83,14 @@ de_healthy <-
       pivot_wider(names_from = "Assay", values_from = "NPX")
     
     healthy_res <-
-      do_limma_disease(data_wide = disease_healthy_data,
-                       metadata = disease_healthy_meta,
-                       disease = disease,
-                       cutoff = 0.5,
-                       controls = "Healthy",
-                       correct = T) 
+      do_limma_disease(
+        data_wide = disease_healthy_data,
+        metadata = disease_healthy_meta,
+        disease = disease,
+        cutoff = 0.5,
+        controls = "Healthy",
+        correct = T
+      )
     
   })
 ```
@@ -84,49 +98,45 @@ de_healthy <-
 ## Against class
 
 ```{r}
-de_class <- 
+de_class <-
   map_df(as.character(diseases), function(disease) {
-    
     message("Processing disease: ", disease)
-
+    
     # Get the class of the current disease
-    class <- 
-      meta_disease |> 
-      filter(Disease == disease) |> 
-      pull(Class) |> 
+    class <-
+      meta_disease |>
+      filter(Disease == disease) |>
+      pull(Class) |>
       unique()
     
     # Find diseases in the same class but not the current disease
-    diseases_control <- 
+    diseases_control <-
       meta_disease |>
       distinct(Disease, Class) |>
       filter(Class == class,
-             Disease != disease) 
+             Disease != disease)
     
     # Filter controls based on gender-specific diseases
-    if(disease %in% female_diseases) {
-      
-       diseases_control <- 
-        diseases_control |> 
-        filter(!Disease %in% male_diseases) |> 
+    if (disease %in% female_diseases) {
+      diseases_control <-
+        diseases_control |>
+        filter(!Disease %in% male_diseases) |>
         pull(Disease)
-       
+      
     } else if (disease %in% male_diseases) {
+      diseases_control <-
+        diseases_control |>
+        filter(!Disease %in% female_diseases) |>
+        pull(Disease)
       
-       diseases_control <- 
-        diseases_control |> 
-         filter(!Disease %in% female_diseases) |> 
-        pull(Disease)
-       
     } else {
-     
-       diseases_control <- 
-        diseases_control |> 
+      diseases_control <-
+        diseases_control |>
         pull(Disease)
-        
+      
     }
     
-# Match controls for each disease in diseases_control
+    # Match controls for each disease in diseases_control
     controls_meta <-
       map_df(diseases_control, function(control_disease) {
         matched_controls <-
@@ -141,28 +151,30 @@ de_class <-
     message("Control samples: ", nrow(controls_meta))
     
     # Combine disease and control metadata
-    disease_class_meta <- 
-      meta_disease |> 
-      filter(Disease == disease) |> 
-      bind_rows(controls_meta) |> 
-      mutate(Disease = ifelse(Disease == disease, disease, "Control")) |> 
+    disease_class_meta <-
+      meta_disease |>
+      filter(Disease == disease) |>
+      bind_rows(controls_meta) |>
+      mutate(Disease = ifelse(Disease == disease, disease, "Control")) |>
       select(DAid = DAid, Disease, Sex, Age, BMI)
     
     # Prepare data for differential expression analysis
-    disease_class_data <- 
-      data_disease |> 
-      filter(DAid %in% disease_class_meta$DAid) |> 
-      select(DAid, Assay, NPX) |> 
+    disease_class_data <-
+      data_disease |>
+      filter(DAid %in% disease_class_meta$DAid) |>
+      select(DAid, Assay, NPX) |>
       pivot_wider(names_from = "Assay", values_from = "NPX")
     
     # Perform differential expression analysis
-    class_res <- 
-      do_limma_disease(data_wide = disease_class_data, 
-                       metadata = disease_class_meta,
-                       disease = disease,
-                       cutoff = 0.5,
-                       controls = "Class",
-                       correct = T)
+    class_res <-
+      do_limma_disease(
+        data_wide = disease_class_data,
+        metadata = disease_class_meta,
+        disease = disease,
+        cutoff = 0.5,
+        controls = "Class",
+        correct = T
+      )
     
   })
 ```
@@ -170,57 +182,53 @@ de_class <-
 ## Against other diseases
 
 ```{r}
-de_diseases <- 
+de_diseases <-
   map_df(as.character(diseases), function(disease) {
-    
     message("Processing disease: ", disease)
     
     # Find control diseases
-    diseases_control <- 
+    diseases_control <-
       meta_disease |>
       distinct(Disease) |>
       filter(Disease != disease,
-             Disease != "Healthy") 
+             Disease != "Healthy")
     
-    n_males <- 
-      meta_disease |> 
+    n_males <-
+      meta_disease |>
       filter(Disease == disease,
-             Sex == "M") |> 
+             Sex == "M") |>
       nrow()
     
-    n_females <- 
-      meta_disease |> 
+    n_females <-
+      meta_disease |>
       filter(Disease == disease,
-             Sex == "F") |> 
+             Sex == "F") |>
       nrow()
     
     # Filter controls based on gender-specific diseases
-    if(n_males == 0 & n_females > 0) {
-      
-      diseases_control <- 
-        meta_disease |> 
+    if (n_males == 0 & n_females > 0) {
+      diseases_control <-
+        meta_disease |>
         filter(!Disease %in% disease,
-               Disease != "Healthy") |> 
-        group_by(Disease) |> 
-        count(Sex) |> 
-        filter(Sex == "F") |> 
+               Disease != "Healthy") |>
+        group_by(Disease) |>
+        count(Sex) |>
+        filter(Sex == "F") |>
         pull(Disease)
       
     } else if (n_males > 0 & n_females == 0) {
-      
-      diseases_control <- 
-        meta_disease |> 
+      diseases_control <-
+        meta_disease |>
         filter(!Disease %in% disease,
-               Disease != "Healthy") |> 
-        group_by(Disease) |> 
-        count(Sex) |> 
-        filter(Sex == "M") |> 
+               Disease != "Healthy") |>
+        group_by(Disease) |>
+        count(Sex) |>
+        filter(Sex == "M") |>
         pull(Disease)
       
     } else {
-      
-      diseases_control <- 
-        diseases_control |> 
+      diseases_control <-
+        diseases_control |>
         pull(Disease)
       
     }
@@ -228,7 +236,6 @@ de_diseases <-
     # Match controls for each disease in diseases_control
     controls_meta <-
       map_df(diseases_control, function(control_disease) {
-        
         matched_controls <-
           match_samples(metadata = meta_disease,
                         case = disease,
@@ -240,26 +247,28 @@ de_diseases <-
       })
     
     # Combine disease and control metadata
-    disease_meta <- 
-      meta_disease |> 
-      filter(Disease == disease) |> 
-      bind_rows(controls_meta) |> 
-      mutate(Disease = ifelse(Disease == disease, disease, "Control")) |> 
+    disease_meta <-
+      meta_disease |>
+      filter(Disease == disease) |>
+      bind_rows(controls_meta) |>
+      mutate(Disease = ifelse(Disease == disease, disease, "Control")) |>
       select(DAid = DAid, Disease, Sex, Age, BMI)
     
-    disease_data <- 
-      data_disease |> 
-      filter(DAid %in% disease_meta$DAid) |> 
-      select(DAid, Assay, NPX) |> 
+    disease_data <-
+      data_disease |>
+      filter(DAid %in% disease_meta$DAid) |>
+      select(DAid, Assay, NPX) |>
       pivot_wider(names_from = "Assay", values_from = "NPX")
     
-    disease_res <- 
-      do_limma_disease(data_wide = disease_data, 
-                       metadata = disease_meta,
-                       disease = disease,
-                       cutoff = 0.5,
-                       controls = "All other diseases",
-                       correct = T)
+    disease_res <-
+      do_limma_disease(
+        data_wide = disease_data,
+        metadata = disease_meta,
+        disease = disease,
+        cutoff = 0.5,
+        controls = "All other diseases",
+        correct = T
+      )
     
   })
 ```
@@ -267,64 +276,99 @@ de_diseases <-
 ## Combine 
 
 ```{r}
-combined_de <- 
-  de_healthy |> 
-  bind_rows(de_class) |> 
-  bind_rows(de_diseases) |> 
-  mutate(adj.P.Val = ifelse(adj.P.Val == 0, 1e-320, adj.P.Val)) |> 
-  select(Disease, Control, Assay, logFC, adj.P.Val, Significance = sig) 
+combined_de <-
+  de_healthy |>
+  bind_rows(de_class) |>
+  bind_rows(de_diseases) |>
+  mutate(adj.P.Val = ifelse(adj.P.Val == 0, 1e-320, adj.P.Val)) |>
+  select(Disease, Control, Assay, logFC, adj.P.Val, Significance = sig)
 
 saveRDS(combined_de, savepath_data("DE", "combined_de.rds"))
-write_tsv(combined_de, savepath_data("Supplementary-files", "Data_S6.tsv"))
-
-combined_de <- readRDS(savepath_data("DE", "combined_de.rds"))
+write_tsv(combined_de,
+          savepath_data("Supplementary-files", "Data_S6.tsv"))
 ```
 
 # Visualization
 
+Summarize and display patterns in differential expression to highlight disease-specific and shared protein signatures.
+
+## Number of significant proteins across diseases and comparisons
+
 ```{r}
-combined_de_ext <- 
-  combined_de |> 
-  mutate(Significance_FC1_pval05 = case_when(logFC > 1 & adj.P.Val < 0.05 ~ "significant up",
-                                              logFC < -1 & adj.P.Val < 0.05 ~ "significant down",
-                                              T ~ "not significant"),
-         Significance_FC05_pval005 = case_when(logFC > 0.5 & adj.P.Val < 0.005 ~ "significant up",
-                                              logFC < -0.5 & adj.P.Val < 0.005 ~ "significant down",
-                                              T ~ "not significant"),
-         Significance_FC1_pval005 = case_when(logFC > 1 & adj.P.Val < 0.005 ~ "significant up",
-                                              logFC < -1 & adj.P.Val < 0.005 ~ "significant down",
-                                              T ~ "not significant"),
-         Significance_FC1_pval0005 = case_when(logFC > 1 & adj.P.Val < 0.0005 ~ "significant up",
-                                              logFC < -1 & adj.P.Val < 0.0005 ~ "significant down",
-                                              T ~ "not significant")) |> 
+combined_de_ext <-
+  combined_de |>
+  mutate(
+    Significance_FC1_pval05 = case_when(
+      logFC > 1 & adj.P.Val < 0.05 ~ "significant up",
+      logFC < -1 &
+        adj.P.Val < 0.05 ~ "significant down",
+      T ~ "not significant"
+    ),
+    Significance_FC05_pval005 = case_when(
+      logFC > 0.5 & adj.P.Val < 0.005 ~ "significant up",
+      logFC < -0.5 &
+        adj.P.Val < 0.005 ~ "significant down",
+      T ~ "not significant"
+    ),
+    Significance_FC1_pval005 = case_when(
+      logFC > 1 & adj.P.Val < 0.005 ~ "significant up",
+      logFC < -1 &
+        adj.P.Val < 0.005 ~ "significant down",
+      T ~ "not significant"
+    ),
+    Significance_FC1_pval0005 = case_when(
+      logFC > 1 & adj.P.Val < 0.0005 ~ "significant up",
+      logFC < -1 &
+        adj.P.Val < 0.0005 ~ "significant down",
+      T ~ "not significant"
+    )
+  ) |>
   rename(Significance_original = Significance)
 
-plot_de <- 
-  combined_de_ext |> 
-  select(-logFC, -adj.P.Val) |> 
-  pivot_longer(cols = c("Significance_original", "Significance_FC1_pval05", "Significance_FC05_pval005", "Significance_FC1_pval005", "Significance_FC1_pval0005"),
-               names_to = "Threshold",
-               values_to = "Significance") |> 
-  group_by(Control, Disease, Threshold) |> 
-  count(Significance) |> 
-  mutate( Disease = factor(Disease, levels = rev(disease_class_order)),
-          Threshold = gsub("Significance_", "", Threshold),
-          Threshold = factor(Threshold, levels = c("original", "FC1_pval05", "FC05_pval005", "FC1_pval005", "FC1_pval0005"))) |> 
-  filter(Significance != "not significant") |> 
+plot_de <-
+  combined_de_ext |>
+  select(-logFC,-adj.P.Val) |>
+  pivot_longer(
+    cols = c(
+      "Significance_original",
+      "Significance_FC1_pval05",
+      "Significance_FC05_pval005",
+      "Significance_FC1_pval005",
+      "Significance_FC1_pval0005"
+    ),
+    names_to = "Threshold",
+    values_to = "Significance"
+  ) |>
+  group_by(Control, Disease, Threshold) |>
+  count(Significance) |>
+  mutate(
+    Disease = factor(Disease, levels = rev(disease_class_order)),
+    Threshold = gsub("Significance_", "", Threshold),
+    Threshold = factor(
+      Threshold,
+      levels = c(
+        "original",
+        "FC1_pval05",
+        "FC05_pval005",
+        "FC1_pval005",
+        "FC1_pval0005"
+      )
+    )
+  ) |>
+  filter(Significance != "not significant") |>
   ggplot(aes(Disease, n, fill = Significance)) +
   geom_col() +
-  #geom_text(aes(label = n), position = position_stack(vjust = 0.5), size = 3) +
   coord_flip() +
-  facet_wrap(Threshold~Control, nrow = 1) +
+  facet_wrap(Threshold ~ Control, nrow = 1) +
   scale_fill_manual(values = pal_de) +
   theme_hpa(angled = T, axis_y = F) +
   ylab("Number of proteins")
 
-plot_disease <- 
-  meta_disease |> 
-  distinct(Disease, Class) |> 
-  filter(Disease != "Healthy") |> 
-  mutate(Disease = factor(Disease, levels = rev(disease_class_order))) |> 
+plot_disease <-
+  meta_disease |>
+  distinct(Disease, Class) |>
+  filter(Disease != "Healthy") |>
+  mutate(Disease = factor(Disease, levels = rev(disease_class_order))) |>
   ggplot(aes("", Disease, fill = Class)) +
   geom_tile() +
   coord_fixed() +
@@ -333,66 +377,95 @@ plot_disease <-
   theme(axis.ticks.y = element_blank(),
         axis.line.y = element_blank())
 
-plot_disease + plot_de + 
-  plot_layout(guides = "collect") 
+plot_disease + plot_de +
+  plot_layout(guides = "collect")
 
-ggsave(savepath_results("Manuscript-figures", "DE_thresholds.pdf"), h = 13, w = 19)
+ggsave(
+  savepath_results("Manuscript-figures", "DE_thresholds.pdf"),
+  h = 13,
+  w = 19
+)
 ```
 
+## Overlap
 
+```{r}
+combined_de |>
+  filter(Control  == "All other diseases") |>
+  filter(Significance != "not significant") |>
+  left_join(meta_disease |>
+              distinct(Disease, Class), by = "Disease") |>
+  group_by(Class) |>
+  count(Assay) |>
+  rename(n_assays = n) |>
+  count(n_assays) |>
+  mutate(n_assays = factor(n_assays),
+         Class = factor(Class, levels = class_order)) |>
+  ggplot(aes(n_assays, n, fill = Class)) +
+  geom_col(show.legend = F) +
+  scale_fill_manual(values = pal_class) +
+  facet_grid( ~ Class, scale = "free_x", space = "free_x") +
+  theme_hpa(facet_title = F) +
+  ylab("Number of proteins") +
+  xlab("Number of diseases")
 
+ggsave(
+  savepath_results("Manuscript-figures", "markers_class.pdf"),
+  height = 2.5,
+  width = 12
+)
+```
 ## Network
 
 ```{r}
-differential_expression <- 
-  combined_de |> 
+differential_expression <-
+  combined_de |>
   filter(Control == "All other diseases",
-         Significance == "significant up"
-         #Significance != "not significant"
-         ) |> 
-  select(proteins= Assay,
+         Significance == "significant up") |>
+  select(proteins = Assay,
          disease = Disease)
 
-overlap_diseases <- 
-  expand_grid(disease1 = unique(differential_expression$disease), 
-              disease2 = unique(differential_expression$disease))   |> 
-    filter(disease1 != disease2) |> 
-    group_by_all() |> 
-    do({
-      
-      d1 <- .$disease1
-      d2 <- .$disease2
-      
-      disease1 <- 
-        differential_expression |> 
-        filter(disease == d1) |> 
-        pull(proteins)
-      
-      disease2 <- 
-        differential_expression |> 
-        filter(disease == d2) |> 
-        pull(proteins)
-      
-      ov <- length(intersect(disease1, disease2)) 
-      
-      tibble(disease1 = d1,
-             disease2 = d2,
-             overlap = ov)
-      
-    }) 
+overlap_diseases <-
+  expand_grid(
+    disease1 = unique(differential_expression$disease),
+    disease2 = unique(differential_expression$disease)
+  )   |>
+  filter(disease1 != disease2) |>
+  group_by_all() |>
+  do({
+    d1 <- .$disease1
+    d2 <- .$disease2
+    
+    disease1 <-
+      differential_expression |>
+      filter(disease == d1) |>
+      pull(proteins)
+    
+    disease2 <-
+      differential_expression |>
+      filter(disease == d2) |>
+      pull(proteins)
+    
+    ov <- length(intersect(disease1, disease2))
+    
+    tibble(disease1 = d1,
+           disease2 = d2,
+           overlap = ov)
+    
+  })
 
-filtered_overlap <- 
+filtered_overlap <-
   overlap_diseases |>
-  group_by(disease1) |>  
-  top_n(3, overlap) |> 
+  group_by(disease1) |>
+  top_n(3, overlap) |>
   ungroup() |>
   filter(overlap > 150)
 
-graph <- 
-  as_tbl_graph(filtered_overlap, directed = FALSE) |> 
-  activate(nodes) |> 
-  left_join(meta_disease |> 
-              select(name = Disease, Class) |> 
+graph <-
+  as_tbl_graph(filtered_overlap, directed = FALSE) |>
+  activate(nodes) |>
+  left_join(meta_disease |>
+              select(name = Disease, Class) |>
               distinct(), by = "name")
 
 ggraph(graph, layout = "stress") +
@@ -400,77 +473,60 @@ ggraph(graph, layout = "stress") +
   geom_node_point(aes(color = Class), size = 10) +
   geom_node_text(aes(label = name), repel = TRUE) +
   scale_color_manual(values = pal_class) +
-  theme_void() 
+  theme_void()
 
-ggsave(savepath_results("Manuscript-figures", "Network_de_overlap.pdf"), h = 8, w = 8)
+ggsave(
+  savepath_results("Manuscript-figures", "Network_de_overlap.pdf"),
+  h = 8,
+  w = 8
+)
 ```
 
-## Overlap
-
-```{r}
-combined_de |> 
-  filter(Control  == "All other diseases") |> 
-  filter(Significance != "not significant") |> 
-  left_join(meta_disease |> 
-              distinct(Disease, Class), by = "Disease") |> 
-  group_by(Class) |> 
-  count(Assay) |> 
-  rename(n_assays = n) |> 
-  count(n_assays) |> 
-  mutate(n_assays = factor(n_assays),
-         Class = factor(Class, levels = class_order)) |> 
-  ggplot(aes(n_assays, n, fill = Class)) +
-  geom_col(show.legend = F) +
-  scale_fill_manual(values = pal_class) +
-  facet_grid(~Class, scale = "free_x", space = "free_x") +
-  theme_hpa(facet_title = F) +
-  ylab("Number of proteins") +
-  xlab("Number of diseases")
-  
-ggsave(savepath_results("Manuscript-figures", "markers_class.pdf"),
-       height = 2.5,
-       width = 12)
-```
 
 # Enrichment
 
-```{r}
-olink_uniprot_mapping <- read_tsv("../Human-disease-blood-atlas/data/olink_uniprot_mapping.tsv")
+Assess enrichment of biological pathways among differentially expressed proteins.
 
-all_enrichment <- 
+
+## Perform GSE
+
+```{r}
+all_enrichment <-
   map_df(as.character(diseases), function(disease) {
-    de_res <- 
-      combined_de |> 
-      filter(Disease == disease, 
-             Control == "All other diseases") 
+    de_res <-
+      combined_de |>
+      filter(Disease == disease,
+             Control == "All other diseases")
     
     original_gene_list <- de_res$logFC
     
-    names(original_gene_list) <- 
-      de_res |> 
-      left_join(olink_uniprot_mapping, by = "Assay") |> 
+    names(original_gene_list) <-
+      de_res |>
+      left_join(olink_uniprot_mapping, by = "Assay") |>
       pull(UniProt)
     
     gene_list = sort(original_gene_list, decreasing = TRUE)
     
-    gse <- gseGO(geneList = gene_list, 
-                 ont = "BP", 
-                 keyType = "UNIPROT", 
-                 pvalueCutoff = 0.05, 
-                 verbose = TRUE, 
-                 OrgDb = "org.Hs.eg.db", 
-                 pAdjustMethod = "BH")
+    gse <- gseGO(
+      geneList = gene_list,
+      ont = "BP",
+      keyType = "UNIPROT",
+      pvalueCutoff = 0.05,
+      verbose = TRUE,
+      OrgDb = "org.Hs.eg.db",
+      pAdjustMethod = "BH"
+    )
     
-    go_res <- 
-      gse@result |> 
-      as_tibble() |> 
-      mutate(Disease = disease) |> 
-      relocate(Disease) |> 
+    go_res <-
+      gse@result |>
+      as_tibble() |>
+      mutate(Disease = disease) |>
+      relocate(Disease) |>
       mutate(Type = "GO_BP")
   })
 
 # Summarise terms
-all_enrichment_ext <- 
+all_enrichment_ext <-
   all_enrichment %>%
   mutate(Theme = map_chr(Description, assign_theme))
 ```
@@ -478,38 +534,35 @@ all_enrichment_ext <-
 ## Save results
 
 ```{r}
-go_bp_enrichment <- 
+go_bp_enrichment <-
   all_enrichment %>%
-  filter(Type == "GO_BP") 
+  filter(Type == "GO_BP")
 
-write_excel_csv(go_bp_enrichment, savepath_data("Supplementary-files", "Data_S7.csv"))
-
-all_enrichment_ext <- read_csv2(savepath_data("Supplementary-files", "Data_S7.csv"))
+write_excel_csv(go_bp_enrichment,
+                savepath_data("Supplementary-files", "Data_S7.csv"))
 ```
 
-## Visualize number of enriched terms
+## Visualize 
 
 ### Summarise GO terms
 
 ```{r}
-library(rrvgo)
-
-go_terms <- 
-  all_enrichment_ext %>% 
-  filter(p.adjust < 0.05) %>% 
-  pull(ID) %>% 
+go_terms <-
+  all_enrichment_ext %>%
+  filter(p.adjust < 0.05) %>%
+  pull(ID) %>%
   unique()
 
-go <- 
-  all_enrichment_ext %>% 
-  mutate(p.adjust = as.numeric(p.adjust)) |> 
-  filter(p.adjust < 0.05) 
+go <-
+  all_enrichment_ext %>%
+  mutate(p.adjust = as.numeric(p.adjust)) |>
+  filter(p.adjust < 0.05)
 
 # Calculate similarity
 simMatrix <- calculateSimMatrix(go_terms,
-                                orgdb="org.Hs.eg.db",
-                                ont="BP",
-                                method="Rel")
+                                orgdb = "org.Hs.eg.db",
+                                ont = "BP",
+                                method = "Rel")
 
 
 scores <- setNames(-log10(go$p.adjust), go$ID)
@@ -517,178 +570,198 @@ scores <- setNames(-log10(go$p.adjust), go$ID)
 # Reduce terms
 reducedTerms <- reduceSimMatrix(simMatrix,
                                 scores,
-                                threshold=0.7,
-                                orgdb="org.Hs.eg.db")
+                                threshold = 0.7,
+                                orgdb = "org.Hs.eg.db")
 
 # Visualize similarity
-heatmapPlot(simMatrix,
-            reducedTerms,
-            annotateParent=TRUE,
-            annotationLabel="parentTerm",
-            fontsize=6)
-
+heatmapPlot(
+  simMatrix,
+  reducedTerms,
+  annotateParent = TRUE,
+  annotationLabel = "parentTerm",
+  fontsize = 6
+)
 scatterPlot(simMatrix, reducedTerms)
-
 treemapPlot(reducedTerms)
 ```
-
 
 ### Barplot
 
 ```{r}
-barplot <- 
+barplot <-
   all_enrichment_ext %>%
   filter(p.adjust < 0.05) %>%
   group_by(Disease) %>%
-  summarise(count = n(), .groups = "drop") |> 
-  mutate(Disease = factor(Disease, levels = rev(disease_class_order))) |> 
+  summarise(count = n(), .groups = "drop") |>
+  mutate(Disease = factor(Disease, levels = rev(disease_class_order))) |>
   ggplot(aes(Disease, count)) +
   geom_col(fill = "grey") +
   coord_flip() +
   theme_hpa() +
-  theme(legend.position = "top")+
+  theme(legend.position = "top") +
   xlab("") +
-  ylab("Number of significant pathways") 
+  ylab("Number of significant pathways")
 
 barplot
-ggsave(savepath_results("Manuscript-figures", "enrichment_barplot_final.pdf"), h = 10, w = 7)
+ggsave(
+  savepath_results("Manuscript-figures", "enrichment_barplot_final.pdf"),
+  h = 10,
+  w = 7
+)
 ```
 
 ### Heatmap
 
 ```{r}
-go_reduced <- 
-  reducedTerms |> 
+go_reduced <-
+  reducedTerms |>
   as_tibble()
 
-keep_parent_terms <- 
+keep_parent_terms <-
   all_enrichment_ext %>%
   filter(p.adjust < 0.05) %>%
-  left_join(go_reduced, by = c("ID" = "go")) |> 
+  left_join(go_reduced, by = c("ID" = "go")) |>
   group_by(parentTerm) %>%
-  summarise(count = n(), .groups = "drop")  |> 
-  arrange(count) |> 
+  summarise(count = n(), .groups = "drop")  |>
+  arrange(count) |>
   filter(count > 10)
 
-theme_matrix <- 
+theme_matrix <-
   all_enrichment_ext %>%
   filter(p.adjust < 0.05) %>%
-  left_join(go_reduced |> 
-              filter(parentTerm %in% keep_parent_terms$parentTerm), by = c("ID" = "go")) |> 
-  filter(!is.na(parentTerm)) |> 
+  left_join(go_reduced |>
+              filter(parentTerm %in% keep_parent_terms$parentTerm),
+            by = c("ID" = "go")) |>
+  filter(!is.na(parentTerm)) |>
   group_by(Disease, parentTerm) %>%
-  summarise(count = n(), .groups = "drop") |> 
-  pivot_wider(names_from = parentTerm, values_from = count, values_fill = 0)
+  summarise(count = n(), .groups = "drop") |>
+  pivot_wider(names_from = parentTerm,
+              values_from = count,
+              values_fill = 0)
 
-annotation_diseases <- 
-  meta_disease |> 
-  distinct(Disease, Class) |> 
+annotation_diseases <-
+  meta_disease |>
+  distinct(Disease, Class) |>
   column_to_rownames("Disease")
-  
-heatmap <- 
-    theme_matrix |>
-    mutate(Disease = factor(Disease, levels = disease_class_order)) |> 
-    arrange(Disease) |> 
-    column_to_rownames("Disease") |> 
-    pheatmap(
-      cluster_rows = F,
-      clustering_method = "ward.D2",
-      color = colorRampPalette(c("white", "darkblue"))(100),
-      annotation_row = annotation_diseases,
-      annotation_colors = list(Class = pal_class)) |> 
-      as.ggplot()
 
-ggsave(savepath_results("Manuscript-figures", "enrichment_heatmap_final.pdf"), h = 12, w = 12)
+heatmap <-
+  theme_matrix |>
+  mutate(Disease = factor(Disease, levels = disease_class_order)) |>
+  arrange(Disease) |>
+  column_to_rownames("Disease") |>
+  pheatmap(
+    cluster_rows = F,
+    clustering_method = "ward.D2",
+    color = colorRampPalette(c("white", "darkblue"))(100),
+    annotation_row = annotation_diseases,
+    annotation_colors = list(Class = pal_class)
+  ) |>
+  as.ggplot()
+
+ggsave(
+  savepath_results("Manuscript-figures", "enrichment_heatmap_final.pdf"),
+  h = 12,
+  w = 12
+)
 ```
 
 
 # Pleiotropic proteins
 
-```{r}
-dat_overall <- 
-  combined_de |> 
-  filter(Control  == "All other diseases") |> 
-  filter(Significance != "not significant") |> 
-  count(Assay)
-  
-dat_overall |> 
-  ggplot(aes(n)) +
-  geom_histogram()
+Characterize proteins associated with multiple diseases.
 
-examples <- 
-  dat_overall |> 
-  arrange(-n) |> 
+
+## Identify proteins significant for many diseases
+
+```{r}
+# Extract differential expression results
+dat_overall <-
+  combined_de |>
+  filter(Control  == "All other diseases") |>
+  filter(Significance != "not significant") |>
+  count(Assay)
+
+# Select top proteins
+examples <-
+  dat_overall |>
+  arrange(-n) |>
   head(35)
 
 # Compute the top of the stacked bars for each assay
-barplot_data <- 
-  combined_de |> 
-  filter(Control  == "All other diseases",
-         Significance != "not significant",
-         Assay %in% examples$Assay) |> 
-  left_join(meta_disease |> 
-              distinct(Disease, Class), by = "Disease") |> 
-  group_by(Assay) |> 
+barplot_data <-
+  combined_de |>
+  filter(
+    Control  == "All other diseases",
+    Significance != "not significant",
+    Assay %in% examples$Assay
+  ) |>
+  left_join(meta_disease |>
+              distinct(Disease, Class), by = "Disease") |>
+  group_by(Assay) |>
   count(Class)
 
-barplot_totals <- 
-  barplot_data |> 
-  group_by(Assay) |> 
-  summarize(y_position = sum(n)) |> 
+barplot_totals <-
+  barplot_data |>
+  group_by(Assay) |>
+  summarize(y_position = sum(n)) |>
   filter(Assay %in% ukb_associations_mortality$Assay)  # Filter for assays in ukb_associations_mortality
 
-
-plot_pleiotropy <- 
-  barplot_data |> 
+plot_pleiotropy <-
+  barplot_data |>
   mutate(Assay = factor(Assay, levels = rev(examples$Assay))) |>
   ggplot(aes(Assay, n, fill = Class)) +
   geom_col(show.legend = F) +
   coord_flip() +
   scale_fill_manual(values = pal_class) +
   theme_hpa(angled = T) +
-   xlab("")
+  xlab("")
 
-ggsave(savepath_results("Manuscript-figures", "general_disease_markers.pdf"),
-       height = 3,
-       width = 10)
-
+ggsave(
+  savepath_results("Manuscript-figures", "general_disease_markers.pdf"),
+  height = 3,
+  width = 10
+)
 ```
 
 ## Literature
 
 ```{r}
-ukb_associations_mortality <- 
-  ukb_associations |> 
-  filter(phenotype == "All-cause mortality",
-         Assay %in% unique(data_disease$Assay),
-         adjusted_pval < 0.05,
-         hazard_ratio > 1) 
+# Parse data
+ukb_associations_mortality <-
+  ukb_associations |>
+  filter(
+    phenotype == "All-cause mortality",
+    Assay %in% unique(data_disease$Assay),
+    adjusted_pval < 0.05,
+    hazard_ratio > 1
+  )
 
-gadd_2024 <- import_df("data/UKB/mortality_Gadd_2024.xlsx")
-
-gadd_2024_mortality <- 
-  gadd_2024 |> 
-  filter(Naming == "Death") |> 
+gadd_2024_mortality <-
+  gadd_2024 |>
+  filter(Naming == "Death") |>
   rename(Assay = Protein)
 
-you_2024 <- import_df("data/UKB/all_cause_mortality_You_2024.xlsx")
-
-you_2024_mortality <- 
-  you_2024 |> 
-  filter(DiseaseCode == "All-cause mortality") |> 
+you_2024_mortality <-
+  you_2024 |>
+  filter(DiseaseCode == "All-cause mortality") |>
   rename(Assay = Pro_code)
 
-
-plot_study <- 
+# Generate plot
+plot_study <-
   examples |>
-  distinct(Assay) |> 
-  mutate(Olink_insight = ifelse(Assay %in% ukb_associations_mortality$Assay, "Yes", "No"),
-         You_2024 = ifelse(Assay %in% you_2024_mortality$Assay, "Yes", "No"),
-         Gadd_2024 = ifelse(Assay %in%  gadd_2024_mortality$Assay, "Yes", "No")) |> 
-  pivot_longer(cols = c(Olink_insight,You_2024,Gadd_2024), 
-               names_to = "Study", values_to = "Mortality") |>
+  distinct(Assay) |>
+  mutate(
+    Olink_insight = ifelse(Assay %in% ukb_associations_mortality$Assay, "Yes", "No"),
+    You_2024 = ifelse(Assay %in% you_2024_mortality$Assay, "Yes", "No"),
+    Gadd_2024 = ifelse(Assay %in%  gadd_2024_mortality$Assay, "Yes", "No")
+  ) |>
+  pivot_longer(
+    cols = c(Olink_insight, You_2024, Gadd_2024),
+    names_to = "Study",
+    values_to = "Mortality"
+  ) |>
   mutate(Assay = factor(Assay, levels = rev(examples$Assay)),
-         Study = factor(Study, levels = c("Olink_insight","Gadd_2024","You_2024"))) |> 
+         Study = factor(Study, levels = c("Olink_insight", "Gadd_2024", "You_2024"))) |>
   ggplot(aes(Study, Assay, fill = Mortality)) +
   geom_tile(color = "white") +
   coord_fixed() +
@@ -696,76 +769,72 @@ plot_study <-
   theme_hpa(angled = T, axis_y = F) +
   xlab("") +
   theme(legend.position = "top")
-
-
 ```
 
 ## Overlap age, sex, BMI
 
 ```{r}
-anova_res <- read_csv2(savepath_data("Supplementary-files", "Data_S5.csv"))
+# Import ANOVA results
+anova_res <-
+  read_csv2(savepath_data("Supplementary-files", "Data_S5.csv"))
 
-
-anova_dat <- 
-  anova_res |> 
-  select(Protein, term, p.adjusted, Eta2_perc) |> 
+# Extract ANOVA proteins for age, sex, bmi
+anova_dat <-
+  anova_res |>
+  select(Protein, term, p.adjusted, Eta2_perc) |>
   mutate(p.adjusted = as.numeric(p.adjusted),
-         Eta2_perc = as.numeric(Eta2_perc)) |> 
+         Eta2_perc = as.numeric(Eta2_perc)) |>
   filter(p.adjusted < 0.05,
          Eta2_perc > 1,
-         term != "Disease") 
+         term != "Disease")
 
-sex_proteins <- 
-  anova_dat |> 
-  filter(term == "Sex") |> 
+sex_proteins <-
+  anova_dat |>
+  filter(term == "Sex") |>
   pull(Protein)
 
-age_proteins <- 
-  anova_dat |> 
-  filter(term == "Age") |> 
+age_proteins <-
+  anova_dat |>
+  filter(term == "Age") |>
   pull(Protein)
 
-bmi_proteins <- 
-  anova_dat |> 
-  filter(term == "BMI") |> 
+bmi_proteins <-
+  anova_dat |>
+  filter(term == "BMI") |>
   pull(Protein)
 
-
-anova_dat |> filter(Protein %in% examples$Assay) |>  
-  filter(Protein == "CALCA")
-  count(Protein) |> arrange(-n)
-
-plot_age_sex_bmi
-
-examples |> 
-  filter(Assay %in% anova_dat$Protein)
-
-plot_age_sex_bmi <- 
+# Generate plot
+plot_age_sex_bmi <-
   examples |>
-  distinct(Assay) |> 
-  mutate(Sex = ifelse(Assay %in% sex_proteins, "Sex", "No"),
-         Age = ifelse(Assay %in% age_proteins, "Age", "No"),
-         BMI = ifelse(Assay %in%  bmi_proteins, "BMI", "No")) |> 
-  pivot_longer(cols = c(Sex, Age, BMI), 
-               names_to = "term", values_to = "association") |>
-  mutate(Assay = factor(Assay, levels = rev(examples$Assay))) |> 
+  distinct(Assay) |>
+  mutate(
+    Sex = ifelse(Assay %in% sex_proteins, "Sex", "No"),
+    Age = ifelse(Assay %in% age_proteins, "Age", "No"),
+    BMI = ifelse(Assay %in%  bmi_proteins, "BMI", "No")
+  ) |>
+  pivot_longer(
+    cols = c(Sex, Age, BMI),
+    names_to = "term",
+    values_to = "association"
+  ) |>
+  mutate(Assay = factor(Assay, levels = rev(examples$Assay))) |>
   ggplot(aes(term, Assay, fill = association)) +
   geom_tile(color = "white") +
   coord_fixed() +
   scale_fill_manual(values = c(pal_anova, "No" = "grey90")) +
   theme_hpa(angled = T, axis_y = F) +
-  xlab("")+
+  xlab("") +
   theme(legend.position = "top")
-
 ```
-
 
 ## Combine
 
 ```{r}
 plot_pleiotropy | plot_study | plot_age_sex_bmi
-ggsave(savepath_results("Manuscript-figures", "general_disease_markers_v2.pdf"),
-       height = 10,
-       width = 5)
+ggsave(
+  savepath_results("Manuscript-figures", "general_disease_markers_v2.pdf"),
+  height = 10,
+  width = 5
+)
 ```
 
