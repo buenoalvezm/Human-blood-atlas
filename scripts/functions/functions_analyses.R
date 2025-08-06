@@ -102,6 +102,79 @@ do_anova <- function(df, protein) {
   
 }
 
+# Function to run logistic regression
+do_log_reg <- function(protein,
+                       disease_case,
+                       disease_control,
+                       disease_train,
+                       disease_test) {
+  # Filter and preprocess data for the current protein
+  train_data <-
+    disease_train |>
+    filter(Disease %in% c(disease_case, disease_control)) |>
+    mutate(Disease = ifelse(Disease %in% disease_control, "Control", "Case")) |>
+    select(DAid, Disease, protein) |>
+    mutate(Disease = factor(Disease))
+  
+  test_data <-
+    disease_test |>
+    filter(Disease %in% c(disease_case, disease_control)) |>
+    mutate(Disease = ifelse(Disease %in% disease_control, "Control", "Case")) |>
+    select(DAid, Disease, protein) |>
+    mutate(Disease = factor(Disease))
+  
+  # Define the recipe and model specification
+  recipe <-
+    recipe(Disease ~ ., data = train_data) %>%
+    update_role(DAid, new_role = "id") # Update role for the sample ID
+  
+  model_spec <-
+    logistic_reg() %>%
+    set_engine("glm")
+  
+  # Create the workflow
+  workflow <-
+    workflow() %>%
+    add_recipe(recipe) %>%
+    add_model(model_spec)
+  
+  # Fit the model on the training data
+  set.seed(213)
+  fit <-
+    workflow %>%
+    fit(data = train_data)
+  
+  # Predict on the test data
+  predictions <-
+    predict(fit, test_data, type = "prob") %>%
+    bind_cols(test_data |>
+                select(DAid, Disease))
+  
+  # Evaluate the model using ROC AUC
+  performance <- roc_auc(predictions, truth = Disease, `.pred_Case`)
+  
+  roc_curve <-
+    roc_curve(predictions, truth = Disease, `.pred_Case`)
+  
+  predictions_discrete <-
+    predict(fit, test_data) |>
+    bind_cols(test_data |>
+                select(DAid, Disease))
+  
+  cm <-
+    conf_mat(predictions_discrete, truth = Disease, `.pred_class`) #|> autoplot(type = "heatmap")
+  
+  
+  return(
+    list(
+      AUC = performance$.estimate,
+      predictions = predictions,
+      roc_curve = roc_curve,
+      cm = cm
+    )
+  )
+}
+
 # Function to match case samples to controls
 match_samples <-  function(metadata,
                            case,
