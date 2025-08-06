@@ -134,7 +134,7 @@ match_samples <-  function(metadata,
   
   dat <-
     metadata |>
-    filter(Disease %in% c(case, control),!is.na(Sex),!is.na(Age)) |>
+    filter(Disease %in% c(case, control), !is.na(Sex), !is.na(Age)) |>
     mutate(Disease = factor(Disease, levels = c(control, case)))
   
   if (n_males == 0 | n_females == 0) {
@@ -191,7 +191,7 @@ do_limma_disease <-
     if (correct == T) {
       dat <-
         dat |>
-        filter(!is.na(Sex),!is.na(Age))
+        filter(!is.na(Sex), !is.na(Age))
     } else {
       dat <- dat
     }
@@ -199,21 +199,21 @@ do_limma_disease <-
     # Design a model
     if (correct == T) {
       if (n_males == 0 | n_females == 0) {
-        design <- model.matrix( ~ 0 + as.factor(dat$Group) + dat$Age)
+        design <- model.matrix(~ 0 + as.factor(dat$Group) + dat$Age)
         colnames(design) <- c("control", "case", "Age")
       } else if (disease %in% pediatric_diseases &
                  controls == "Healthy") {
         design <-
-          model.matrix( ~ 0 + as.factor(dat$Group) + as.factor(dat$Sex))
+          model.matrix(~ 0 + as.factor(dat$Group) + as.factor(dat$Sex))
         colnames(design) <- c("control", "case",  "Sex")
       } else {
         design <-
-          model.matrix( ~ 0 + as.factor(dat$Group) + as.factor(dat$Sex) + dat$Age)
+          model.matrix(~ 0 + as.factor(dat$Group) + as.factor(dat$Sex) + dat$Age)
         colnames(design) <- c("control", "case",  "Sex", "Age")
       }
       
     } else {
-      design <- model.matrix( ~ 0 + as.factor(dat$Group))
+      design <- model.matrix(~ 0 + as.factor(dat$Group))
       colnames(design) <- c("control", "case")
     }
     
@@ -224,7 +224,7 @@ do_limma_disease <-
     # Fit linear model to each protein assay
     dat_fit <-
       dat %>%
-      select(-Sex,-Age,-BMI,-Group)  %>%
+      select(-Sex, -Age, -BMI, -Group)  %>%
       column_to_rownames("DAid") %>%
       t()
     
@@ -291,7 +291,6 @@ discrete_prediction <-
            split_train,
            split_test,
            seed) {
-    
     cat(paste0("\nPreparing training and testing data for ", variable_predict))
     
     split_train <-
@@ -404,7 +403,7 @@ discrete_prediction <-
     performance <-
       final_glmnet_fit |>
       collect_metrics() |>
-      select(-.config,-.estimator)
+      select(-.config, -.estimator)
     
     glmnet_auc <-
       final_glmnet_fit |>
@@ -472,7 +471,6 @@ continuous_prediction <-
            split_test,
            variable_predict,
            seed) {
-    
     cat(paste0("\nPreparing training and testing data for ", variable_predict))
     
     split_train <-
@@ -563,7 +561,7 @@ continuous_prediction <-
     performance <-
       final_glmnet_fit |>
       collect_metrics() |>
-      select(-.config,-.estimator)
+      select(-.config, -.estimator)
     
     glmnet_metrics <-
       final_glmnet_fit |>

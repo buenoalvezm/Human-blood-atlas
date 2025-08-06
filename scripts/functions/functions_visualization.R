@@ -35,7 +35,7 @@ do_pca <- function(data,
   
   if (impute) {
     pca_rec <-
-      recipe(~ ., data = data_w) %>%
+      recipe( ~ ., data = data_w) %>%
       update_role(Sample, new_role = "id")  |>
       step_normalize(all_predictors()) |>
       step_impute_knn(all_predictors()) |>
@@ -47,7 +47,7 @@ do_pca <- function(data,
     
   } else {
     pca_rec <-
-      recipe(~ ., data = data_w) %>%
+      recipe( ~ ., data = data_w) %>%
       update_role(Sample, new_role = "id")  |>
       step_normalize(all_predictors()) |>
       step_pca(all_predictors())
@@ -75,7 +75,7 @@ do_pca <- function(data,
       mutate(terms = reorder_within(terms, abs(value), component)) %>%
       ggplot(aes(abs(value), terms, fill = value > 0)) +
       geom_col() +
-      facet_wrap(~ component, scales = "free_y") +
+      facet_wrap( ~ component, scales = "free_y") +
       scale_y_reordered() +
       labs(x = "Absolute value of contribution",
            y = NULL, fill = "Positive?") +
@@ -130,7 +130,7 @@ do_umap <- function(data,
   
   if (impute) {
     umap_rec <-
-      recipe(~ ., data = data_w) %>%
+      recipe( ~ ., data = data_w) %>%
       update_role(Sample, new_role = "id")  |>
       step_normalize(all_predictors()) |>
       step_impute_knn(all_predictors()) |>
@@ -141,7 +141,7 @@ do_umap <- function(data,
     
   } else {
     umap_rec <-
-      recipe(~ ., data = data_w) %>%
+      recipe( ~ ., data = data_w) %>%
       update_role(Sample, new_role = "id")  |>
       step_normalize(all_predictors()) |>
       step_umap(all_predictors(), neighbors = n_neighbors)
@@ -375,7 +375,7 @@ plot_boxplot <- function(proteins,
         ) +
         scale_color_manual(values = pal_phase2) +
         scale_fill_manual(values = pal_phase2) +
-        facet_wrap(~ Assay, scales = "free_y") +
+        facet_wrap( ~ Assay, scales = "free_y") +
         theme_hpa(angled = T) +
         xlab("") +
         ggtitle(title)
@@ -515,6 +515,11 @@ plot_donut <-
       donut_data <-
         tibble(Assay = proteins) |>
         left_join(olink_targets, by = "Assay") |>
+        mutate(Platform = ifelse(
+          Platform == "Olink Explore 1463",
+          "Olink Explore 1536",
+          Platform
+        )) |>
         count(Platform) |>
         mutate(percentage = n / sum(n) * 100,
                label = paste0(Platform, " (", n, ")"))
@@ -642,7 +647,7 @@ plot_donut <-
   }
 
 # Generate boxplot for UKB data
-boxplot_ukb <- function(cancer, protein) {
+plot_boxplot_ukb <- function(cancer, protein) {
   meta <-
     ukb_dat |>
     left_join(ukb_meta)  |>
